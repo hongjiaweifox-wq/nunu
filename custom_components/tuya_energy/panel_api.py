@@ -29,7 +29,7 @@ from .services import _get_tuya_device
 URL_BASE = "/tuya_xnyjcn_panel_static"
 PANEL_URL_PATH = "tuya-xnyjcn-panel"
 PANEL_WEBCOMPONENT = "tuya-xnyjcn-panel"
-PANEL_STATIC_VERSION = "2"
+PANEL_STATIC_VERSION = "6"
 EMBED_SCRIPT_URL = (
     f"{URL_BASE}/tuya-xnyjcn-device-embed.js?v={PANEL_STATIC_VERSION}"
 )

@@ -17,6 +17,7 @@ from .coordinator import TuyaConfigEntry
 from .entity import TuyaEntity
 from .panel_entity_discovery import (
     build_select_description,
+    configure_panel_dynamic_entity,
     is_panel_grouped_code,
     iter_panel_functions,
 )
@@ -399,7 +400,7 @@ async def async_setup_entry(
                     entity = TuyaSelectEntity(
                         device, manager, description, definition
                     )
-                    entity._panel_group_read_only = True
+                    configure_panel_dynamic_entity(entity)
                     entities.append(entity)
 
         async_add_entities(entities)

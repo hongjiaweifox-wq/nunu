@@ -13,14 +13,9 @@
                 "values": "{\"unit\":\"\",\"min\":0,\"max\":99999,\"scale\":0,\"step\":1}"
             },
             {
-                "code": "work_mode",
+                "code": "base_strategy",
                 "type": "Enum",
-                "values": "{\"range\":[\"self_powered\",\"time_of_use\"]}"
-            },
-            {
-                "code": "country_code",
-                "type": "String",
-                "values": "{\"maxlen\":255}"
+                "values": "{\"range\":[\"idle\",\"self_use\"]}"
             },
             {
                 "code": "regulation_grid_export_p_limit",

@@ -10,7 +10,6 @@ from tuya_sharing.device import DeviceFunction
 from homeassistant.components.number import NumberEntityDescription
 from homeassistant.components.select import SelectEntityDescription
 from homeassistant.components.switch import SwitchEntityDescription
-from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import entity_registry as er
 
@@ -47,6 +46,13 @@ def panel_unique_id(tuya_device_id: str, code: str) -> str:
     return f"tuya.{tuya_device_id}{code}"
 
 
+def configure_panel_dynamic_entity(entity) -> None:
+    """Mark a dynamically discovered panel entity as non-config."""
+    entity._panel_group_read_only = True
+    entity._panel_dynamic_entity = True
+    entity._attr_entity_category = None
+
+
 def iter_panel_functions(
     device: CustomerDevice,
 ) -> Iterator[tuple[DeviceFunction, str]]:
@@ -73,7 +79,7 @@ def build_number_description(function: DeviceFunction) -> NumberEntityDescriptio
     return NumberEntityDescription(
         key=function.code,
         name=format_function_label(function),
-        entity_category=EntityCategory.CONFIG,
+        entity_category=None,
     )
 
 
@@ -82,7 +88,7 @@ def build_select_description(function: DeviceFunction) -> SelectEntityDescriptio
     return SelectEntityDescription(
         key=function.code,
         name=format_function_label(function),
-        entity_category=EntityCategory.CONFIG,
+        entity_category=None,
     )
 
 
@@ -91,7 +97,7 @@ def build_switch_description(function: DeviceFunction) -> SwitchEntityDescriptio
     return SwitchEntityDescription(
         key=function.code,
         name=format_function_label(function),
-        entity_category=EntityCategory.CONFIG,
+        entity_category=None,
     )
 
 

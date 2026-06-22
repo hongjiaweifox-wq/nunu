@@ -3,7 +3,7 @@
  * Loaded globally via add_extra_js_url (ES module import on modern browsers).
  */
 
-const PANEL_STATIC_VERSION = "2";
+const PANEL_STATIC_VERSION = "6";
 const PANEL_SCRIPT = `/tuya_xnyjcn_panel_static/tuya-xnyjcn-panel.js?v=${PANEL_STATIC_VERSION}`;
 const EMBED_ROOT_ID = "tuya-xnyjcn-embed-root";
 const DEVICE_PATH_RE = /\/config\/devices\/device\/([^/?#]+)/;

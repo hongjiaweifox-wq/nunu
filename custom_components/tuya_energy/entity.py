@@ -7,6 +7,7 @@ from tuya_sharing import CustomerDevice, Manager
 
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
+from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.entity import Entity, EntityDescription
 
 from .const import LOGGER, TUYA_HA_SIGNAL_UPDATE_ENTITY
@@ -23,6 +24,7 @@ class TuyaEntity(Entity):
     _attr_has_entity_name = True
     _attr_should_poll = False
     _panel_group_read_only: bool = False
+    _panel_dynamic_entity: bool = False
 
     def __init__(
         self,
@@ -53,6 +55,13 @@ class TuyaEntity(Entity):
                 self._handle_state_update,
             )
         )
+        if self._panel_dynamic_entity and (
+            entry := er.async_get(self.hass).async_get(self.entity_id)
+        ):
+            if entry.entity_category is not None:
+                er.async_get(self.hass).async_update_entity(
+                    self.entity_id, entity_category=None
+                )
 
     async def _handle_state_update(
         self,

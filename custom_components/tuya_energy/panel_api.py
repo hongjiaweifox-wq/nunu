@@ -8,20 +8,24 @@ from typing import Any
 import voluptuous as vol
 
 from homeassistant.components import panel_custom, websocket_api
-from homeassistant.components.frontend import add_extra_js_url, async_panel_exists
+from homeassistant.components.frontend import (
+    add_extra_js_url,
+    async_panel_exists,
+    remove_extra_js_url,
+)
 from homeassistant.components.http import StaticPathConfig
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import device_registry as dr
-from homeassistant.helpers.dispatcher import dispatcher_send
 
-from .const import DOMAIN, LOGGER, TUYA_HA_SIGNAL_UPDATE_ENTITY
+from .const import DOMAIN, LOGGER
 from .panel_functions import (
     DYNAMIC_PANEL_CATEGORIES,
     apply_function_group_via_api,
     build_panel_state,
     ensure_device_function_groups,
     fetch_function_history_from_api,
+    notify_panel_commands_applied,
     validate_group_commands,
 )
 from .services import _get_tuya_device
@@ -29,7 +33,9 @@ from .services import _get_tuya_device
 URL_BASE = "/tuya_xnyjcn_panel_static"
 PANEL_URL_PATH = "tuya-xnyjcn-panel"
 PANEL_WEBCOMPONENT = "tuya-xnyjcn-panel"
-PANEL_STATIC_VERSION = "6"
+PANEL_STATIC_VERSION = "7"
+# Device detail page "Grouped configuration" card; sidebar panel remains available.
+DEVICE_PAGE_GROUPED_PANEL_ENABLED = False
 EMBED_SCRIPT_URL = (
     f"{URL_BASE}/tuya-xnyjcn-device-embed.js?v={PANEL_STATIC_VERSION}"
 )
@@ -171,15 +177,7 @@ async def websocket_set_panel_functions(
         connection.send_error(msg["id"], "apply_failed", str(err))
         return
 
-    updated_codes = [command["code"] for command in commands]
-    for command in commands:
-        device.status[command["code"]] = command["value"]
-    dispatcher_send(
-        hass,
-        f"{TUYA_HA_SIGNAL_UPDATE_ENTITY}_{device.id}",
-        updated_codes,
-        None,
-    )
+    notify_panel_commands_applied(hass, device, commands)
     connection.send_result(msg["id"], build_panel_state(hass, device))
 
 
@@ -257,18 +255,29 @@ def _register_websocket_api(hass: HomeAssistant) -> None:
 
 async def async_register_tuya_panel(hass: HomeAssistant) -> None:
     """Register the xnyjcn custom configuration panel and websocket API."""
-    if hass.data.get(f"{DOMAIN}_panel_registered"):
-        return
-
-    _register_websocket_api(hass)
+    if not hass.data.get(f"{DOMAIN}_panel_ws_registered"):
+        _register_websocket_api(hass)
+        hass.data[f"{DOMAIN}_panel_ws_registered"] = True
 
     frontend_dir = Path(__file__).parent / "panel" / "frontend"
     if not hass.data.get(f"{DOMAIN}_panel_static_registered"):
         await hass.http.async_register_static_paths(
             [StaticPathConfig(URL_BASE, str(frontend_dir), cache_headers=False)]
         )
-        add_extra_js_url(hass, EMBED_SCRIPT_URL)
         hass.data[f"{DOMAIN}_panel_static_registered"] = True
+
+    if DEVICE_PAGE_GROUPED_PANEL_ENABLED:
+        add_extra_js_url(hass, EMBED_SCRIPT_URL)
+    else:
+        remove_extra_js_url(hass, EMBED_SCRIPT_URL)
+        for legacy_version in ("6",):
+            remove_extra_js_url(
+                hass,
+                f"{URL_BASE}/tuya-xnyjcn-device-embed.js?v={legacy_version}",
+            )
+
+    if hass.data.get(f"{DOMAIN}_panel_registered"):
+        return
 
     if not async_panel_exists(hass, PANEL_URL_PATH):
         await panel_custom.async_register_panel(

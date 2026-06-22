@@ -12,6 +12,7 @@ from homeassistant.components.select import SelectEntityDescription
 from homeassistant.components.switch import SwitchEntityDescription
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import entity_registry as er
+from homeassistant.helpers.entity_registry import RegistryEntryHider
 
 from .const import DOMAIN
 from .panel_functions import DYNAMIC_PANEL_CATEGORIES, format_function_label
@@ -44,13 +45,6 @@ def is_panel_device(device: CustomerDevice) -> bool:
 def panel_unique_id(tuya_device_id: str, code: str) -> str:
     """Return the unique id used by Tuya config entities."""
     return f"tuya.{tuya_device_id}{code}"
-
-
-def configure_panel_dynamic_entity(entity) -> None:
-    """Mark a dynamically discovered panel entity as non-config."""
-    entity._panel_group_read_only = True
-    entity._panel_dynamic_entity = True
-    entity._attr_entity_category = None
 
 
 def iter_panel_functions(
@@ -120,8 +114,41 @@ def get_panel_grouped_codes(device: CustomerDevice) -> set[str]:
 
 
 def is_panel_grouped_code(device: CustomerDevice, code: str) -> bool:
-    """Return whether a DP code is controlled via panel group apply."""
+    """Return whether a DP code belongs to panel function groups."""
     return code in get_panel_grouped_codes(device)
+
+
+def is_panel_dynamic_code(device: CustomerDevice, code: str) -> bool:
+    """Return whether a DP code is a dynamically discovered panel function entity."""
+    if not is_panel_grouped_code(device, code):
+        return False
+    hardcoded = HARDCODED_PANEL_DPCODES.get(device.category, frozenset())
+    return code not in hardcoded
+
+
+def restore_panel_entity_visibility(hass: HomeAssistant, device: CustomerDevice) -> None:
+    """Clear integration-hidden state for panel function entities."""
+    if not is_panel_device(device):
+        return
+
+    entity_registry = er.async_get(hass)
+    hardcoded = HARDCODED_PANEL_DPCODES.get(device.category, frozenset())
+    grouped_codes = get_panel_grouped_codes(device)
+    for platform in CONFIG_PLATFORMS:
+        for code in grouped_codes:
+            entity_id = resolve_entity_id(hass, device.id, code, platform)
+            if not entity_id:
+                continue
+            entry = entity_registry.async_get(entity_id)
+            if not entry:
+                continue
+            updates: dict[str, object] = {}
+            if entry.hidden_by == RegistryEntryHider.INTEGRATION:
+                updates["hidden_by"] = None
+            if code not in hardcoded and entry.entity_category is not None:
+                updates["entity_category"] = None
+            if updates:
+                entity_registry.async_update_entity(entity_id, **updates)
 
 
 def resolve_entity_id_for_function(

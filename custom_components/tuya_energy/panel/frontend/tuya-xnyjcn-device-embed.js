@@ -3,7 +3,10 @@
  * Loaded globally via add_extra_js_url (ES module import on modern browsers).
  */
 
-const PANEL_STATIC_VERSION = "6";
+/** Mirror panel_api.DEVICE_PAGE_GROUPED_PANEL_ENABLED when this script is registered. */
+const DEVICE_PAGE_EMBED_ENABLED = false;
+
+const PANEL_STATIC_VERSION = "7";
 const PANEL_SCRIPT = `/tuya_xnyjcn_panel_static/tuya-xnyjcn-panel.js?v=${PANEL_STATIC_VERSION}`;
 const EMBED_ROOT_ID = "tuya-xnyjcn-embed-root";
 const DEVICE_PATH_RE = /\/config\/devices\/device\/([^/?#]+)/;
@@ -74,6 +77,9 @@ async function loadPanelDeviceIds(hass) {
 }
 
 async function shouldEmbed(hass, deviceId) {
+  if (!DEVICE_PAGE_EMBED_ENABLED) {
+    return false;
+  }
   if (!hass || !deviceId) {
     return false;
   }
@@ -161,6 +167,10 @@ async function mountEmbed(hass, deviceId, page) {
 }
 
 async function tryEmbed(retry = 0) {
+  if (!DEVICE_PAGE_EMBED_ENABLED) {
+    removeEmbed();
+    return;
+  }
   if (!DEVICE_PATH_RE.test(location.pathname)) {
     removeEmbed();
     return;
@@ -221,6 +231,10 @@ async function tryEmbed(retry = 0) {
 }
 
 function scheduleEmbed() {
+  if (!DEVICE_PAGE_EMBED_ENABLED) {
+    removeEmbed();
+    return;
+  }
   if (embedTimer) {
     window.clearTimeout(embedTimer);
   }
@@ -248,6 +262,9 @@ function waitForHass(callback) {
 }
 
 function init() {
+  if (!DEVICE_PAGE_EMBED_ENABLED) {
+    return;
+  }
   window.addEventListener("location-changed", scheduleEmbed);
   window.addEventListener("popstate", scheduleEmbed);
 
@@ -263,16 +280,19 @@ function init() {
 }
 
 window.__tuyaXnyjcnEmbed = {
+  enabled: DEVICE_PAGE_EMBED_ENABLED,
   tryEmbed,
   getDevicePage,
   getDeviceIdFromPath,
   deepQuerySelector,
 };
 
-if (document.readyState === "loading") {
-  document.addEventListener("DOMContentLoaded", init);
-} else {
-  init();
+if (DEVICE_PAGE_EMBED_ENABLED) {
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", init);
+  } else {
+    init();
+  }
 }
 
 export {};

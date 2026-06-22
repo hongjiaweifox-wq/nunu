@@ -13,11 +13,6 @@
                 "values": "{\"unit\":\"\",\"min\":0,\"max\":99999,\"scale\":0,\"step\":1}"
             },
             {
-                "code": "base_strategy",
-                "type": "Enum",
-                "values": "{\"range\":[\"idle\",\"self_use\"]}"
-            },
-            {
                 "code": "regulation_grid_export_p_limit",
                 "type": "Integer",
                 "values": "{\"unit\":\"W\",\"min\":0,\"max\":30000,\"scale\":0,\"step\":1}"

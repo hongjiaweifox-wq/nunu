@@ -5,17 +5,21 @@ from typing import Any
 from tuya_device_handlers.device_wrapper import DeviceWrapper
 from tuya_sharing import CustomerDevice, Manager
 
-from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.entity import Entity, EntityDescription
+from homeassistant.helpers.entity_registry import RegistryEntryHider
 
 from .const import LOGGER, TUYA_HA_SIGNAL_UPDATE_ENTITY
-from .util import get_device_info
-
-PANEL_GROUP_READ_ONLY_MSG = (
-    "Grouped settings must be applied with Apply group in the device panel"
+from .panel_entity_discovery import (
+    is_panel_device,
+    is_panel_dynamic_code,
 )
+from .panel_functions import (
+    apply_panel_commands_via_api,
+    notify_panel_commands_applied,
+)
+from .util import get_device_info
 
 
 class TuyaEntity(Entity):
@@ -23,8 +27,6 @@ class TuyaEntity(Entity):
 
     _attr_has_entity_name = True
     _attr_should_poll = False
-    _panel_group_read_only: bool = False
-    _panel_dynamic_entity: bool = False
 
     def __init__(
         self,
@@ -55,13 +57,21 @@ class TuyaEntity(Entity):
                 self._handle_state_update,
             )
         )
-        if self._panel_dynamic_entity and (
-            entry := er.async_get(self.hass).async_get(self.entity_id)
-        ):
-            if entry.entity_category is not None:
-                er.async_get(self.hass).async_update_entity(
-                    self.entity_id, entity_category=None
-                )
+        if not is_panel_device(self.device):
+            return
+        code = self.entity_description.key
+        if not is_panel_dynamic_code(self.device, code):
+            return
+        entry = er.async_get(self.hass).async_get(self.entity_id)
+        if not entry:
+            return
+        updates: dict[str, object] = {}
+        if entry.hidden_by == RegistryEntryHider.INTEGRATION:
+            updates["hidden_by"] = None
+        if entry.entity_category is not None:
+            updates["entity_category"] = None
+        if updates:
+            er.async_get(self.hass).async_update_entity(self.entity_id, **updates)
 
     async def _handle_state_update(
         self,
@@ -98,10 +108,17 @@ class TuyaEntity(Entity):
 
     async def _async_send_commands(self, commands: list[dict[str, Any]]) -> None:
         """Send a list of commands to the device."""
-        if self._panel_group_read_only:
-            raise HomeAssistantError(PANEL_GROUP_READ_ONLY_MSG)
         LOGGER.debug("Sending commands for device %s: %s", self.device.id, commands)
         if not commands:
+            return
+        if is_panel_device(self.device) and all(
+            is_panel_dynamic_code(self.device, command["code"])
+            for command in commands
+        ):
+            await apply_panel_commands_via_api(
+                self.hass, self.device_manager, self.device, commands
+            )
+            notify_panel_commands_applied(self.hass, self.device, commands)
             return
         await self.hass.async_add_executor_job(
             self.device_manager.send_commands, self.device.id, commands

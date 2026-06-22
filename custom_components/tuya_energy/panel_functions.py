@@ -231,23 +231,24 @@ async def ensure_device_function_groups(
 
 async def preload_panel_devices(hass: HomeAssistant, manager: Manager) -> None:
     """Load panel function groups for all supported devices before entity setup."""
+    from .panel_entity_discovery import restore_panel_entity_visibility
+
     for device in manager.device_map.values():
         await ensure_device_function_groups(hass, manager, device)
+        restore_panel_entity_visibility(hass, device)
 
 
-async def apply_function_group_via_api(
+async def apply_panel_commands_via_api(
     hass: HomeAssistant,
     manager: Manager,
     device: CustomerDevice,
-    group_id: str,
     commands: list[dict[str, Any]],
 ) -> None:
-    """Apply a grouped panel configuration via thing commands API."""
+    """Apply panel dynamic entity commands via the thing commands API."""
     api_path = THING_COMMANDS_API_PATH.format(device_id=device.id)
     body = {"commands": commands}
-    LOGGER.debug(
-        "Applying function group %s on device %s via %s: %s",
-        group_id,
+    LOGGER.info(
+        "Applying panel commands on device %s via %s: %s",
         device.id,
         api_path,
         commands,
@@ -258,8 +259,44 @@ async def apply_function_group_via_api(
     )
     if not response.get("success"):
         raise HomeAssistantError(
-            f"Failed to apply function group {group_id} on device {device.id}"
+            f"Failed to apply panel commands on device {device.id}"
         )
+
+
+def notify_panel_commands_applied(
+    hass: HomeAssistant, device: CustomerDevice, commands: list[dict[str, Any]]
+) -> None:
+    """Optimistically update local device status after panel commands succeed."""
+    from homeassistant.helpers.dispatcher import dispatcher_send
+
+    from .const import TUYA_HA_SIGNAL_UPDATE_ENTITY
+
+    updated_codes = [command["code"] for command in commands]
+    for command in commands:
+        device.status[command["code"]] = command["value"]
+    dispatcher_send(
+        hass,
+        f"{TUYA_HA_SIGNAL_UPDATE_ENTITY}_{device.id}",
+        updated_codes,
+        None,
+    )
+
+
+async def apply_function_group_via_api(
+    hass: HomeAssistant,
+    manager: Manager,
+    device: CustomerDevice,
+    group_id: str,
+    commands: list[dict[str, Any]],
+) -> None:
+    """Apply a grouped panel configuration via thing commands API."""
+    LOGGER.debug(
+        "Applying function group %s on device %s: %s",
+        group_id,
+        device.id,
+        commands,
+    )
+    await apply_panel_commands_via_api(hass, manager, device, commands)
 
 
 def _build_mock_function_history(device: CustomerDevice, code: str) -> list[dict[str, Any]]:

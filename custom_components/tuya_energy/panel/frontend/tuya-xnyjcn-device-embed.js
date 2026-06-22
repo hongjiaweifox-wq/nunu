@@ -3,7 +3,8 @@
  * Loaded globally via add_extra_js_url (ES module import on modern browsers).
  */
 
-const PANEL_SCRIPT = "/tuya_xnyjcn_panel_static/tuya-xnyjcn-panel.js";
+const PANEL_STATIC_VERSION = "2";
+const PANEL_SCRIPT = `/tuya_xnyjcn_panel_static/tuya-xnyjcn-panel.js?v=${PANEL_STATIC_VERSION}`;
 const EMBED_ROOT_ID = "tuya-xnyjcn-embed-root";
 const DEVICE_PATH_RE = /\/config\/devices\/device\/([^/?#]+)/;
 const PANEL_MARKER = "tuya-xnyjcn-panel";
@@ -57,7 +58,7 @@ async function loadPanelDeviceIds(hass) {
   }
   if (!panelDeviceIdsPromise) {
     panelDeviceIdsPromise = hass
-      .callWS({ type: "tuya/get_panel_devices" })
+      .callWS({ type: "tuya_energy/get_panel_devices" })
       .then((result) => {
         panelDeviceIds = new Set(
           (result.devices || []).map((device) => device.device_id)

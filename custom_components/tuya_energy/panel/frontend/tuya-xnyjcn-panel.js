@@ -394,7 +394,7 @@ class TuyaXnyjcnPanel extends HTMLElement {
   async _loadDevices() {
     if (!this._hass) return;
     try {
-      const result = await this._callWS("tuya/get_panel_devices");
+      const result = await this._callWS("tuya_energy/get_panel_devices");
       this._devices = result.devices || [];
       if (!this._deviceId && this._devices.length === 1) {
         this._deviceId = this._devices[0].device_id;
@@ -416,7 +416,7 @@ class TuyaXnyjcnPanel extends HTMLElement {
     this._error = null;
     this._render();
     try {
-      this._state = await this._callWS("tuya/get_panel_functions", {
+      this._state = await this._callWS("tuya_energy/get_panel_functions", {
         device_id: this._deviceId,
       });
       this._initDraftsFromState();
@@ -448,7 +448,7 @@ class TuyaXnyjcnPanel extends HTMLElement {
     this._error = null;
     this._updateGroupSubmitStates();
     try {
-      this._state = await this._callWS("tuya/set_panel_functions", {
+      this._state = await this._callWS("tuya_energy/set_panel_functions", {
         device_id: this._deviceId,
         group_id: groupId,
         commands,
@@ -507,7 +507,7 @@ class TuyaXnyjcnPanel extends HTMLElement {
     };
 
     try {
-      const result = await this._callWS("tuya/get_panel_function_history", {
+      const result = await this._callWS("tuya_energy/get_panel_function_history", {
         device_id: this._deviceId,
         code,
       });

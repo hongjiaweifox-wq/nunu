@@ -16,6 +16,7 @@ from homeassistant.exceptions import HomeAssistantError
 from .const import LOGGER
 
 DYNAMIC_PANEL_CATEGORIES = frozenset({"xnyjcn"})
+PANEL_FUNCTIONS_MOCK_DIR = "mock"
 PANEL_FUNCTIONS_MOCK_FILE = "tuya_panel_functions.json"
 FUNCTION_GROUPS_API_PATH = "/v1.0/m/life/ha/{device_id}/function-groups"
 THING_COMMANDS_API_PATH = "/v1.1/m/thing/{device_id}/commands"
@@ -139,34 +140,46 @@ def _apply_function_groups(
     device.function_groups = function_groups
 
 
-def _load_mock_function_groups(
-    hass: HomeAssistant, device: CustomerDevice
+def _get_mock_function_groups_path() -> Path:
+    """Return the bundled mock file path inside this integration."""
+    return Path(__file__).parent / PANEL_FUNCTIONS_MOCK_DIR / PANEL_FUNCTIONS_MOCK_FILE
+
+
+def _read_mock_function_groups_file(
+    mock_path: Path, category: str
 ) -> dict[str, Any] | None:
-    """Load grouped functions from the local mock file."""
-    mock_path = Path(hass.config.config_dir) / PANEL_FUNCTIONS_MOCK_FILE
+    """Read grouped functions from the local mock file (executor-safe)."""
     if not mock_path.is_file():
-        LOGGER.debug(
-            "No grouped panel functions for device %s (mock file missing: %s)",
-            device.id,
-            mock_path,
-        )
         return None
 
     try:
         data = json.loads(mock_path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError) as err:
-        LOGGER.warning(
-            "Failed to load grouped panel functions mock for device %s: %s",
-            device.id,
-            err,
-        )
+    except (OSError, json.JSONDecodeError):
         return None
 
-    if data.get("category") and data["category"] != device.category:
+    if data.get("category") and data["category"] != category:
         return None
 
     grouped_functions = data.get("functions", {})
     if not isinstance(grouped_functions, dict):
+        return None
+    return grouped_functions
+
+
+async def _load_mock_function_groups(
+    hass: HomeAssistant, device: CustomerDevice
+) -> dict[str, Any] | None:
+    """Load grouped functions from the local mock file."""
+    mock_path = _get_mock_function_groups_path()
+    grouped_functions = await hass.async_add_executor_job(
+        _read_mock_function_groups_file, mock_path, device.category
+    )
+    if grouped_functions is None:
+        LOGGER.debug(
+            "No grouped panel functions for device %s (mock file missing or invalid: %s)",
+            device.id,
+            mock_path,
+        )
         return None
     return grouped_functions
 
@@ -179,7 +192,7 @@ async def fetch_function_groups_from_api(
     LOGGER.debug("Fetching function groups from %s", api_path)
 
     if USE_MOCK_FUNCTION_GROUPS_API:
-        return _load_mock_function_groups(hass, device)
+        return await _load_mock_function_groups(hass, device)
 
     response = await hass.async_add_executor_job(
         manager.customer_api.get, api_path

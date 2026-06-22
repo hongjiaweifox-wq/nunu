@@ -1,0 +1,49 @@
+{
+    "category": "xnyjcn",
+    "functions": {
+        "group1": [
+            {
+                "code": "cell_heating",
+                "type": "Boolean",
+                "values": "{}"
+            },
+            {
+                "code": "expansion_pack_count",
+                "type": "Integer",
+                "values": "{\"unit\":\"\",\"min\":0,\"max\":99999,\"scale\":0,\"step\":1}"
+            },
+            {
+                "code": "work_mode",
+                "type": "Enum",
+                "values": "{\"range\":[\"self_powered\",\"time_of_use\"]}"
+            },
+            {
+                "code": "country_code",
+                "type": "String",
+                "values": "{\"maxlen\":255}"
+            },
+            {
+                "code": "regulation_grid_export_p_limit",
+                "type": "Integer",
+                "values": "{\"unit\":\"W\",\"min\":0,\"max\":30000,\"scale\":0,\"step\":1}"
+            }
+        ],
+        "group2": [
+            {
+                "code": "peak_shaving_enable",
+                "type": "Boolean",
+                "values": "{}"
+            },
+            {
+                "code": "peak_shaving_threshold",
+                "type": "Integer",
+                "values": "{\"unit\":\"W\",\"min\":0,\"max\":30000,\"scale\":0,\"step\":1}"
+            },
+            {
+                "code": "indicator_light_mode",
+                "type": "Enum",
+                "values": "{\"range\":[\"eco\",\"on\",\"off\"]}"
+            }
+        ]
+    }
+}

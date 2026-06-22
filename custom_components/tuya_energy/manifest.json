@@ -1,6 +1,7 @@
 {
-  "domain": "tuya",
-  "name": "Tuya",
+  "domain": "tuya_energy",
+  "name": "Tuya Energy",
+  "version": "1.0.0",
   "codeowners": ["@Tuya", "@zlinoliver"],
   "config_flow": true,
   "dependencies": ["ffmpeg", "http", "websocket_api"],

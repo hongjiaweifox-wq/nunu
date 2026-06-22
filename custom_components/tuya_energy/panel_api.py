@@ -29,7 +29,11 @@ from .services import _get_tuya_device
 URL_BASE = "/tuya_xnyjcn_panel_static"
 PANEL_URL_PATH = "tuya-xnyjcn-panel"
 PANEL_WEBCOMPONENT = "tuya-xnyjcn-panel"
-EMBED_SCRIPT_URL = f"{URL_BASE}/tuya-xnyjcn-device-embed.js"
+PANEL_STATIC_VERSION = "2"
+EMBED_SCRIPT_URL = (
+    f"{URL_BASE}/tuya-xnyjcn-device-embed.js?v={PANEL_STATIC_VERSION}"
+)
+LEGACY_WS_DOMAIN = "tuya"
 
 COMMAND_SCHEMA = vol.Schema(
     {
@@ -39,7 +43,7 @@ COMMAND_SCHEMA = vol.Schema(
 )
 
 
-@websocket_api.websocket_command({vol.Required("type"): "tuya/get_panel_devices"})
+@websocket_api.websocket_command({vol.Required("type"): f"{DOMAIN}/get_panel_devices"})
 @websocket_api.async_response
 async def websocket_get_panel_devices(
     hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict
@@ -70,7 +74,7 @@ async def websocket_get_panel_devices(
 
 @websocket_api.websocket_command(
     {
-        vol.Required("type"): "tuya/get_panel_functions",
+        vol.Required("type"): f"{DOMAIN}/get_panel_functions",
         vol.Required("device_id"): str,
     }
 )
@@ -91,7 +95,7 @@ async def websocket_get_panel_functions(
 
 @websocket_api.websocket_command(
     {
-        vol.Required("type"): "tuya/get_panel_function_history",
+        vol.Required("type"): f"{DOMAIN}/get_panel_function_history",
         vol.Required("device_id"): str,
         vol.Required("code"): str,
     }
@@ -133,7 +137,7 @@ async def websocket_get_panel_function_history(
 
 @websocket_api.websocket_command(
     {
-        vol.Required("type"): "tuya/set_panel_functions",
+        vol.Required("type"): f"{DOMAIN}/set_panel_functions",
         vol.Required("device_id"): str,
         vol.Required("group_id"): str,
         vol.Required("commands"): [COMMAND_SCHEMA],
@@ -179,13 +183,76 @@ async def websocket_set_panel_functions(
     connection.send_result(msg["id"], build_panel_state(hass, device))
 
 
+@websocket_api.websocket_command(
+    {vol.Required("type"): f"{LEGACY_WS_DOMAIN}/get_panel_devices"}
+)
+@websocket_api.async_response
+async def websocket_get_panel_devices_legacy(
+    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict
+) -> None:
+    """Legacy alias for cached frontend builds."""
+    await websocket_get_panel_devices(hass, connection, msg)
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): f"{LEGACY_WS_DOMAIN}/get_panel_functions",
+        vol.Required("device_id"): str,
+    }
+)
+@websocket_api.async_response
+async def websocket_get_panel_functions_legacy(
+    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict
+) -> None:
+    """Legacy alias for cached frontend builds."""
+    await websocket_get_panel_functions(hass, connection, msg)
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): f"{LEGACY_WS_DOMAIN}/get_panel_function_history",
+        vol.Required("device_id"): str,
+        vol.Required("code"): str,
+    }
+)
+@websocket_api.async_response
+async def websocket_get_panel_function_history_legacy(
+    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict
+) -> None:
+    """Legacy alias for cached frontend builds."""
+    await websocket_get_panel_function_history(hass, connection, msg)
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): f"{LEGACY_WS_DOMAIN}/set_panel_functions",
+        vol.Required("device_id"): str,
+        vol.Required("group_id"): str,
+        vol.Required("commands"): [COMMAND_SCHEMA],
+    }
+)
+@websocket_api.async_response
+async def websocket_set_panel_functions_legacy(
+    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict
+) -> None:
+    """Legacy alias for cached frontend builds."""
+    await websocket_set_panel_functions(hass, connection, msg)
+
+
 @callback
 def _register_websocket_api(hass: HomeAssistant) -> None:
     """Register panel websocket commands."""
-    websocket_api.async_register_command(hass, websocket_get_panel_devices)
-    websocket_api.async_register_command(hass, websocket_get_panel_functions)
-    websocket_api.async_register_command(hass, websocket_get_panel_function_history)
-    websocket_api.async_register_command(hass, websocket_set_panel_functions)
+    for handler in (
+        websocket_get_panel_devices,
+        websocket_get_panel_devices_legacy,
+        websocket_get_panel_functions,
+        websocket_get_panel_functions_legacy,
+        websocket_get_panel_function_history,
+        websocket_get_panel_function_history_legacy,
+        websocket_set_panel_functions,
+        websocket_set_panel_functions_legacy,
+    ):
+        websocket_api.async_register_command(hass, handler)
 
 
 async def async_register_tuya_panel(hass: HomeAssistant) -> None:
@@ -209,7 +276,7 @@ async def async_register_tuya_panel(hass: HomeAssistant) -> None:
             frontend_url_path=PANEL_URL_PATH,
             webcomponent_name=PANEL_WEBCOMPONENT,
             config_panel_domain=DOMAIN,
-            module_url=f"{URL_BASE}/tuya-xnyjcn-panel.js",
+            module_url=f"{URL_BASE}/tuya-xnyjcn-panel.js?v={PANEL_STATIC_VERSION}",
             sidebar_title="Tuya Device Panel",
             sidebar_icon="mdi:solar-power",
             embed_iframe=False,

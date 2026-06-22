@@ -3,7 +3,8 @@
 from pathlib import Path
 from typing import Any
 
-from tuya_device_handlers.devices import TUYA_QUIRKS_REGISTRY, register_tuya_quirks
+from tuya_device_handlers import TUYA_QUIRKS_REGISTRY
+from tuya_device_handlers.devices import register_tuya_quirks
 from tuya_sharing import (
     CustomerDevice,
     Manager,
@@ -28,6 +29,8 @@ from .const import (
     TUYA_DISCOVERY_NEW,
     TUYA_HA_SIGNAL_UPDATE_ENTITY,
 )
+from .panel_api import get_panel_configuration_url
+from .panel_functions import DYNAMIC_PANEL_CATEGORIES, ensure_device_function_groups
 from .util import get_device_info
 
 type TuyaConfigEntry = ConfigEntry[DeviceListener]
@@ -134,8 +137,19 @@ class DeviceListener(SharingDeviceListener):
         device_registry = dr.async_get(self.hass)
         self.async_register_device(device_registry, device)
 
-        # Notify platforms of new device so entities can be created
+        if device.category in DYNAMIC_PANEL_CATEGORIES:
+            self.hass.async_create_task(self._async_discover_panel_device(device.id))
+            return
+
         async_dispatcher_send(self.hass, TUYA_DISCOVERY_NEW, [device.id])
+
+    async def _async_discover_panel_device(self, device_id: str) -> None:
+        """Load panel schema and discover entities for a panel device."""
+        device = self.manager.device_map.get(device_id)
+        if device is None:
+            return
+        await ensure_device_function_groups(self.hass, self.manager, device)
+        async_dispatcher_send(self.hass, TUYA_DISCOVERY_NEW, [device_id])
 
     @callback
     def async_register_device(
@@ -144,10 +158,15 @@ class DeviceListener(SharingDeviceListener):
         """Register device with Home Assistant."""
         TUYA_QUIRKS_REGISTRY.initialise_device_quirk(device)
 
-        device_registry.async_get_or_create(
+        device_entry = device_registry.async_get_or_create(
             config_entry_id=self._entry.entry_id,
             **get_device_info(device, initial=True),
         )
+        if device.category in DYNAMIC_PANEL_CATEGORIES:
+            device_registry.async_update_device(
+                device_entry.id,
+                configuration_url=get_panel_configuration_url(device_entry.id),
+            )
 
     def remove_device(self, device_id: str) -> None:
         """Handle device removal event."""

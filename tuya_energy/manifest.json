@@ -3,7 +3,7 @@
   "name": "Tuya",
   "codeowners": ["@Tuya", "@zlinoliver"],
   "config_flow": true,
-  "dependencies": ["ffmpeg"],
+  "dependencies": ["ffmpeg", "http", "websocket_api"],
   "dhcp": [
     {
       "macaddress": "105A17*"

@@ -15,6 +15,11 @@ from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from .const import TUYA_DISCOVERY_NEW, DeviceCategory, DPCode
 from .coordinator import TuyaConfigEntry
 from .entity import TuyaEntity
+from .panel_entity_discovery import (
+    build_select_description,
+    is_panel_grouped_code,
+    iter_panel_functions,
+)
 
 # All descriptions can be found here. Mostly the Enum data types in the
 # default instructions set of each category end up being a select.
@@ -377,11 +382,25 @@ async def async_setup_entry(
         for device_id in device_ids:
             device = manager.device_map[device_id]
             if descriptions := SELECTS.get(device.category):
-                entities.extend(
-                    TuyaSelectEntity(device, manager, description, definition)
-                    for description in descriptions
-                    if (definition := get_default_definition(device, description.key))
-                )
+                for description in descriptions:
+                    if definition := get_default_definition(device, description.key):
+                        entity = TuyaSelectEntity(
+                            device, manager, description, definition
+                        )
+                        if is_panel_grouped_code(device, description.key):
+                            entity._panel_group_read_only = True
+                        entities.append(entity)
+
+            for function, platform in iter_panel_functions(device):
+                if platform != "select":
+                    continue
+                description = build_select_description(function)
+                if definition := get_default_definition(device, function.code):
+                    entity = TuyaSelectEntity(
+                        device, manager, description, definition
+                    )
+                    entity._panel_group_read_only = True
+                    entities.append(entity)
 
         async_add_entities(entities)
 

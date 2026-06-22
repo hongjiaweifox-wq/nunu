@@ -21,6 +21,11 @@ from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from .const import TUYA_DISCOVERY_NEW, DeviceCategory, DPCode
 from .coordinator import TuyaConfigEntry
 from .entity import TuyaEntity
+from .panel_entity_discovery import (
+    build_switch_description,
+    is_panel_grouped_code,
+    iter_panel_functions,
+)
 
 # All descriptions can be found here. Mostly the Boolean data types in the
 # default instruction set of each category end up being a Switch.
@@ -936,11 +941,25 @@ async def async_setup_entry(
         for device_id in device_ids:
             device = manager.device_map[device_id]
             if descriptions := SWITCHES.get(device.category):
-                entities.extend(
-                    TuyaSwitchEntity(device, manager, description, definition)
-                    for description in descriptions
-                    if (definition := get_default_definition(device, description.key))
-                )
+                for description in descriptions:
+                    if definition := get_default_definition(device, description.key):
+                        entity = TuyaSwitchEntity(
+                            device, manager, description, definition
+                        )
+                        if is_panel_grouped_code(device, description.key):
+                            entity._panel_group_read_only = True
+                        entities.append(entity)
+
+            for function, platform in iter_panel_functions(device):
+                if platform != "switch":
+                    continue
+                description = build_switch_description(function)
+                if definition := get_default_definition(device, function.code):
+                    entity = TuyaSwitchEntity(
+                        device, manager, description, definition
+                    )
+                    entity._panel_group_read_only = True
+                    entities.append(entity)
 
         async_add_entities(entities)
 

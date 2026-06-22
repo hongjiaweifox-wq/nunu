@@ -5,11 +5,16 @@ from typing import Any
 from tuya_device_handlers.device_wrapper import DeviceWrapper
 from tuya_sharing import CustomerDevice, Manager
 
+from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.entity import Entity, EntityDescription
 
 from .const import LOGGER, TUYA_HA_SIGNAL_UPDATE_ENTITY
 from .util import get_device_info
+
+PANEL_GROUP_READ_ONLY_MSG = (
+    "Grouped settings must be applied with Apply group in the device panel"
+)
 
 
 class TuyaEntity(Entity):
@@ -17,6 +22,7 @@ class TuyaEntity(Entity):
 
     _attr_has_entity_name = True
     _attr_should_poll = False
+    _panel_group_read_only: bool = False
 
     def __init__(
         self,
@@ -83,6 +89,8 @@ class TuyaEntity(Entity):
 
     async def _async_send_commands(self, commands: list[dict[str, Any]]) -> None:
         """Send a list of commands to the device."""
+        if self._panel_group_read_only:
+            raise HomeAssistantError(PANEL_GROUP_READ_ONLY_MSG)
         LOGGER.debug("Sending commands for device %s: %s", self.device.id, commands)
         if not commands:
             return

@@ -19,6 +19,8 @@ from .const import (
     TUYA_CLIENT_ID,
 )
 from .coordinator import DeviceListener, TuyaConfigEntry
+from .panel_api import async_register_tuya_panel
+from .panel_functions import preload_panel_devices
 from .services import async_setup_services
 
 CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
@@ -30,6 +32,7 @@ logging.getLogger("tuya_sharing").setLevel(logging.CRITICAL)
 async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     """Set up the Tuya Services."""
     await async_setup_services(hass)
+    await async_register_tuya_panel(hass)
 
     return True
 
@@ -59,6 +62,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: TuyaConfigEntry) -> bool
         )
         # Register quirk, and add device to the device registry
         listener.async_register_device(device_registry, device)
+
+    await preload_panel_devices(hass, manager)
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     # If the device does not register any entities,

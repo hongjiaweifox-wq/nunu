@@ -1,7 +1,5 @@
 """Support for Tuya Smart devices."""
 
-import logging
-
 from tuya_sharing import Manager
 
 from homeassistant.core import HomeAssistant
@@ -24,9 +22,6 @@ from .panel_functions import preload_panel_devices
 from .services import async_setup_services
 
 CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
-
-# Suppress logs from the library, it logs unneeded on error
-logging.getLogger("tuya_sharing").setLevel(logging.CRITICAL)
 
 
 async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:

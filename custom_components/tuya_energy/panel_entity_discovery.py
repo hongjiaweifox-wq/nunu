@@ -10,6 +10,7 @@ from tuya_sharing.device import DeviceFunction
 from homeassistant.components.number import NumberEntityDescription
 from homeassistant.components.select import SelectEntityDescription
 from homeassistant.components.switch import SwitchEntityDescription
+from homeassistant.components.time import TimeEntityDescription
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.entity_registry import RegistryEntryHider
@@ -32,9 +33,10 @@ PANEL_TYPE_TO_PLATFORM: dict[str, str] = {
     "Boolean": "switch",
     "Integer": "number",
     "Enum": "select",
+    "hourmin": "time",
 }
 
-CONFIG_PLATFORMS = ("number", "select", "switch")
+CONFIG_PLATFORMS = ("number", "select", "switch", "time")
 
 
 def is_panel_device(device: CustomerDevice) -> bool:
@@ -82,6 +84,7 @@ def build_select_description(function: DeviceFunction) -> SelectEntityDescriptio
     return SelectEntityDescription(
         key=function.code,
         name=format_function_label(function),
+        translation_key=function.code,
         entity_category=None,
     )
 
@@ -91,6 +94,16 @@ def build_switch_description(function: DeviceFunction) -> SwitchEntityDescriptio
     return SwitchEntityDescription(
         key=function.code,
         name=format_function_label(function),
+        entity_category=None,
+    )
+
+
+def build_time_description(function: DeviceFunction) -> TimeEntityDescription:
+    """Build a time entity description for an hourmin panel function."""
+    return TimeEntityDescription(
+        key=function.code,
+        name=format_function_label(function),
+        translation_key=function.code,
         entity_category=None,
     )
 
@@ -155,6 +168,9 @@ def resolve_entity_id_for_function(
     hass: HomeAssistant, device: CustomerDevice, function: DeviceFunction
 ) -> str | None:
     """Resolve entity_id for a panel function, including hardcoded entities."""
+    if function.type == "hourmin":
+        return resolve_entity_id(hass, device.id, function.code, "time")
+
     platform = PANEL_TYPE_TO_PLATFORM.get(function.type)
     if platform and (
         entity_id := resolve_entity_id(hass, device.id, function.code, platform)

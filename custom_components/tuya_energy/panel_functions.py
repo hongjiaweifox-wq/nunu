@@ -14,6 +14,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
 
 from .const import LOGGER
+from .hourmin import hourmin_to_time
 
 DYNAMIC_PANEL_CATEGORIES = frozenset({"xnyjcn"})
 PANEL_FUNCTIONS_MOCK_DIR = "mock"
@@ -29,6 +30,7 @@ TYPE_PLATFORM_MAP = {
     "Integer": "number",
     "Enum": "select",
     "String": "text",
+    "hourmin": "time",
 }
 
 
@@ -67,6 +69,8 @@ def is_value_filled(value_type: str, value: Any) -> bool:
         return value is not None and value != ""
     if value_type == "String":
         return value is not None and str(value).strip() != ""
+    if value_type == "hourmin":
+        return hourmin_to_time(value) is not None
     return value is not None
 
 

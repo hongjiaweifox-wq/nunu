@@ -56,6 +56,7 @@ PLATFORMS = [
     Platform.CAMERA,
     Platform.CLIMATE,
     Platform.COVER,
+    Platform.TIME,
     Platform.EVENT,
     Platform.FAN,
     Platform.HUMIDIFIER,

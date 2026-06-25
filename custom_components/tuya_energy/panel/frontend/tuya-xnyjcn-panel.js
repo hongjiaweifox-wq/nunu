@@ -332,6 +332,33 @@ class TuyaXnyjcnPanel extends HTMLElement {
     }
   }
 
+  _hourminToTimeInput(value) {
+    if (value === null || value === undefined || value === "") {
+      return "";
+    }
+    const encoded = Number(value);
+    if (Number.isNaN(encoded)) {
+      return "";
+    }
+    const hour = Math.floor(encoded / 100);
+    const minute = encoded % 100;
+    if (hour > 23 || minute > 59) {
+      return "";
+    }
+    return `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
+  }
+
+  _timeInputToHourmin(value) {
+    if (!value) {
+      return null;
+    }
+    const [hour, minute] = value.split(":").map(Number);
+    if (Number.isNaN(hour) || Number.isNaN(minute)) {
+      return null;
+    }
+    return hour * 100 + minute;
+  }
+
   _isValueFilled(type, value) {
     if (type === "Boolean") {
       return value !== null && value !== undefined;
@@ -345,6 +372,9 @@ class TuyaXnyjcnPanel extends HTMLElement {
     if (type === "String") {
       return value !== null && String(value).trim() !== "";
     }
+    if (type === "hourmin") {
+      return this._hourminToTimeInput(value) !== "";
+    }
     return value !== null && value !== undefined;
   }
 
@@ -354,6 +384,9 @@ class TuyaXnyjcnPanel extends HTMLElement {
     }
     if (type === "Integer") {
       return el.value === "" ? null : Number(el.value);
+    }
+    if (type === "hourmin") {
+      return this._timeInputToHourmin(el.value);
     }
     return el.value;
   }
@@ -639,6 +672,15 @@ class TuyaXnyjcnPanel extends HTMLElement {
     `;
   }
 
+  _renderHourmin(fn, groupId, value) {
+    const val = this._hourminToTimeInput(value);
+    const disabled = this._pendingGroups.has(groupId) ? "disabled" : "";
+    return `
+      <input type="time" value="${val}" ${disabled}
+        data-group="${groupId}" data-code="${fn.code}" data-type="hourmin" />
+    `;
+  }
+
   _renderFunction(fn, groupId) {
     const draftValue =
       this._groupDrafts[groupId]?.[fn.code] !== undefined
@@ -657,6 +699,9 @@ class TuyaXnyjcnPanel extends HTMLElement {
         break;
       case "String":
         control = this._renderString(fn, groupId, draftValue);
+        break;
+      case "hourmin":
+        control = this._renderHourmin(fn, groupId, draftValue);
         break;
       default:
         control = `<span class="unit">Unsupported (${fn.type})</span>`;

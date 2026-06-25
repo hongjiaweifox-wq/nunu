@@ -146,6 +146,11 @@
                 "name": "Door {index}"
             }
         },
+        "time": {
+            "time_start_1": {
+                "name": "Start time 1"
+            }
+        },
         "event": {
             "doorbell_message": {
                 "name": "Doorbell message"
@@ -312,6 +317,14 @@
             }
         },
         "select": {
+            "indicator_light_mode": {
+                "name": "Indicator light mode",
+                "state": {
+                    "0": "eco",
+                    "1": "on",
+                    "2": "off"
+                }
+            },
             "basic_anti_flicker": {
                 "name": "Anti-flicker",
                 "state": {
@@ -1231,6 +1244,15 @@
         },
         "device_not_tuya_device": {
             "message": "Device with ID {device_id} is not a Tuya feeder."
+        },
+        "demo_schedule_time_invalid_hour": {
+            "message": "Hour must be between 0 and 23 (received {hour})."
+        },
+        "demo_schedule_time_invalid_minute": {
+            "message": "Minute must be between 0 and 59 (received {minute})."
+        },
+        "hourmin_out_of_range": {
+            "message": "Hourmin value must be between 0 and 2359 (received {value})."
         },
         "invalid_meal_plan_data": {
             "message": "Unable to parse meal plan data."

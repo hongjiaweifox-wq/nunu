@@ -32,7 +32,13 @@
             {
                 "code": "indicator_light_mode",
                 "type": "Enum",
-                "values": "{\"range\":[\"eco\",\"on\",\"off\"]}"
+                "values": "{\"range\":[\"0\",\"1\",\"2\"]}"
+            },
+            {
+                "code": "time_start_1",
+                "name": "Start time 1",
+                "type": "hourmin",
+                "values": "{}"
             }
         ]
     }

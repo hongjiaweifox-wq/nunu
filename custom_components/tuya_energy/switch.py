@@ -863,13 +863,6 @@ SWITCHES: dict[DeviceCategory, tuple[SwitchEntityDescription, ...]] = {
             entity_category=EntityCategory.CONFIG,
         ),
     ),
-    DeviceCategory.XNYJCN: (
-        SwitchEntityDescription(
-            key=DPCode.FEEDIN_POWER_LIMIT_ENABLE,
-            translation_key="output_power_limit",
-            entity_category=EntityCategory.CONFIG,
-        ),
-    ),
     DeviceCategory.XXJ: (
         SwitchEntityDescription(
             key=DPCode.SWITCH,

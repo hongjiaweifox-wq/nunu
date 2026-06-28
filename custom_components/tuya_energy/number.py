@@ -438,19 +438,6 @@ NUMBERS: dict[DeviceCategory, tuple[NumberEntityDescription, ...]] = {
             entity_category=EntityCategory.CONFIG,
         ),
     ),
-    DeviceCategory.XNYJCN: (
-        NumberEntityDescription(
-            key=DPCode.BACKUP_RESERVE,
-            translation_key="battery_backup_reserve",
-            entity_category=EntityCategory.CONFIG,
-        ),
-        NumberEntityDescription(
-            key=DPCode.OUTPUT_POWER_LIMIT,
-            translation_key="inverter_output_power_limit",
-            device_class=NumberDeviceClass.POWER,
-            entity_category=EntityCategory.CONFIG,
-        ),
-    ),
     DeviceCategory.YWCGQ: (
         NumberEntityDescription(
             key=DPCode.MAX_SET,

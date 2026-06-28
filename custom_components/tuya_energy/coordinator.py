@@ -30,7 +30,10 @@ from .const import (
     TUYA_HA_SIGNAL_UPDATE_ENTITY,
 )
 from .panel_api import get_panel_configuration_url
-from .panel_functions import DYNAMIC_PANEL_CATEGORIES, ensure_device_function_groups
+from .panel_functions import (
+    DYNAMIC_PANEL_CATEGORIES,
+    ensure_device_energy_schema,
+)
 from .util import get_device_info
 
 type TuyaConfigEntry = ConfigEntry[DeviceListener]
@@ -148,7 +151,7 @@ class DeviceListener(SharingDeviceListener):
         device = self.manager.device_map.get(device_id)
         if device is None:
             return
-        await ensure_device_function_groups(self.hass, self.manager, device)
+        await ensure_device_energy_schema(self.hass, self.manager, device)
         async_dispatcher_send(self.hass, TUYA_DISCOVERY_NEW, [device_id])
 
     @callback

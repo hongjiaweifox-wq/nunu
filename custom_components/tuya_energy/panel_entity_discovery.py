@@ -3,31 +3,23 @@
 from __future__ import annotations
 
 from collections.abc import Iterator
+from typing import Any
 
 from tuya_sharing import CustomerDevice
 from tuya_sharing.device import DeviceFunction
 
+from homeassistant.components.sensor import SensorEntityDescription
 from homeassistant.components.number import NumberEntityDescription
 from homeassistant.components.select import SelectEntityDescription
 from homeassistant.components.switch import SwitchEntityDescription
 from homeassistant.components.time import TimeEntityDescription
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import entity_registry as er
+from homeassistant.helpers.entity import EntityCategory
 from homeassistant.helpers.entity_registry import RegistryEntryHider
 
 from .const import DOMAIN
 from .panel_functions import DYNAMIC_PANEL_CATEGORIES, format_function_label
-
-HARDCODED_PANEL_DPCODES: dict[str, frozenset[str]] = {
-    "xnyjcn": frozenset(
-        {
-            "backup_reserve",
-            "output_power_limit",
-            "work_mode",
-            "feedin_power_limit_enable",
-        }
-    ),
-}
 
 PANEL_TYPE_TO_PLATFORM: dict[str, str] = {
     "Boolean": "switch",
@@ -35,6 +27,8 @@ PANEL_TYPE_TO_PLATFORM: dict[str, str] = {
     "Enum": "select",
     "hourmin": "time",
 }
+
+PANEL_STATUS_SENSOR_TYPES = frozenset({"Integer", "Enum", "String"})
 
 CONFIG_PLATFORMS = ("number", "select", "switch", "time")
 
@@ -49,6 +43,64 @@ def panel_unique_id(tuya_device_id: str, code: str) -> str:
     return f"tuya.{tuya_device_id}{code}"
 
 
+def get_panel_status_entities(device: CustomerDevice) -> list[dict]:
+    """Return read-only status DP schema entries for sensor discovery."""
+    entities = getattr(device, "panel_status_entities", [])
+    return entities if isinstance(entities, list) else []
+
+
+def iter_panel_status_sensors(
+    device: CustomerDevice,
+) -> Iterator[dict[str, Any]]:
+    """Yield read-only status schema entries as sensor candidates."""
+    if not is_panel_device(device):
+        return
+
+    grouped_codes = get_panel_grouped_codes(device)
+    seen: set[str] = set()
+    for entry in get_panel_status_entities(device):
+        if not isinstance(entry, dict) or "code" not in entry:
+            continue
+        code = str(entry["code"])
+        if code in grouped_codes or code in seen:
+            continue
+        if str(entry.get("type", "")) not in PANEL_STATUS_SENSOR_TYPES:
+            continue
+        seen.add(code)
+        yield entry
+
+
+def build_panel_status_sensor_description(
+    entry: dict[str, Any],
+) -> SensorEntityDescription:
+    """Build a sensor entity description for a read-only status DP."""
+    function = status_entry_to_function(entry)
+    return SensorEntityDescription(
+        key=function.code,
+        name=format_function_label(function),
+    )
+
+
+def get_panel_status_sensor_definition(device: CustomerDevice, code: str):
+    """Return a sensor definition for a read-only panel status DP."""
+    from tuya_device_handlers.definition.sensor import (
+        SensorDefinition,
+        get_default_definition,
+    )
+    from tuya_device_handlers.device_wrapper.common import DPCodeStringWrapper
+
+    if definition := get_default_definition(device, code):
+        return definition
+    if wrapper := DPCodeStringWrapper.find_dpcode(device, code):
+        return SensorDefinition(sensor_wrapper=wrapper)
+    return None
+
+
+def status_entry_to_function(entry: dict) -> DeviceFunction:
+    """Convert a status schema entry to a DeviceFunction."""
+    return DeviceFunction(**entry)
+
+
 def iter_panel_functions(
     device: CustomerDevice,
 ) -> Iterator[tuple[DeviceFunction, str]]:
@@ -56,12 +108,11 @@ def iter_panel_functions(
     if not is_panel_device(device):
         return
 
-    hardcoded = HARDCODED_PANEL_DPCODES.get(device.category, frozenset())
     seen: set[str] = set()
     for functions in getattr(device, "function_groups", {}).values():
         for function in functions:
             code = function.code
-            if code in hardcoded or code in seen:
+            if code in seen:
                 continue
             platform = PANEL_TYPE_TO_PLATFORM.get(function.type)
             if platform is None:
@@ -70,41 +121,49 @@ def iter_panel_functions(
             yield function, platform
 
 
-def build_number_description(function: DeviceFunction) -> NumberEntityDescription:
+def build_number_description(
+    function: DeviceFunction, *, entity_category: EntityCategory | None = None
+) -> NumberEntityDescription:
     """Build a number entity description for a panel function."""
     return NumberEntityDescription(
         key=function.code,
         name=format_function_label(function),
-        entity_category=None,
+        entity_category=entity_category,
     )
 
 
-def build_select_description(function: DeviceFunction) -> SelectEntityDescription:
+def build_select_description(
+    function: DeviceFunction, *, entity_category: EntityCategory | None = None
+) -> SelectEntityDescription:
     """Build a select entity description for a panel function."""
     return SelectEntityDescription(
         key=function.code,
         name=format_function_label(function),
         translation_key=function.code,
-        entity_category=None,
+        entity_category=entity_category,
     )
 
 
-def build_switch_description(function: DeviceFunction) -> SwitchEntityDescription:
+def build_switch_description(
+    function: DeviceFunction, *, entity_category: EntityCategory | None = None
+) -> SwitchEntityDescription:
     """Build a switch entity description for a panel function."""
     return SwitchEntityDescription(
         key=function.code,
         name=format_function_label(function),
-        entity_category=None,
+        entity_category=entity_category,
     )
 
 
-def build_time_description(function: DeviceFunction) -> TimeEntityDescription:
+def build_time_description(
+    function: DeviceFunction, *, entity_category: EntityCategory | None = None
+) -> TimeEntityDescription:
     """Build a time entity description for an hourmin panel function."""
     return TimeEntityDescription(
         key=function.code,
         name=format_function_label(function),
         translation_key=function.code,
-        entity_category=None,
+        entity_category=entity_category,
     )
 
 
@@ -132,11 +191,8 @@ def is_panel_grouped_code(device: CustomerDevice, code: str) -> bool:
 
 
 def is_panel_dynamic_code(device: CustomerDevice, code: str) -> bool:
-    """Return whether a DP code is a dynamically discovered panel function entity."""
-    if not is_panel_grouped_code(device, code):
-        return False
-    hardcoded = HARDCODED_PANEL_DPCODES.get(device.category, frozenset())
-    return code not in hardcoded
+    """Return whether a DP code should use the panel commands API."""
+    return is_panel_grouped_code(device, code)
 
 
 def restore_panel_entity_visibility(hass: HomeAssistant, device: CustomerDevice) -> None:
@@ -145,10 +201,8 @@ def restore_panel_entity_visibility(hass: HomeAssistant, device: CustomerDevice)
         return
 
     entity_registry = er.async_get(hass)
-    hardcoded = HARDCODED_PANEL_DPCODES.get(device.category, frozenset())
-    grouped_codes = get_panel_grouped_codes(device)
-    for platform in CONFIG_PLATFORMS:
-        for code in grouped_codes:
+    for code in get_panel_grouped_codes(device):
+        for platform in CONFIG_PLATFORMS:
             entity_id = resolve_entity_id(hass, device.id, code, platform)
             if not entity_id:
                 continue
@@ -158,7 +212,7 @@ def restore_panel_entity_visibility(hass: HomeAssistant, device: CustomerDevice)
             updates: dict[str, object] = {}
             if entry.hidden_by == RegistryEntryHider.INTEGRATION:
                 updates["hidden_by"] = None
-            if code not in hardcoded and entry.entity_category is not None:
+            if entry.entity_category is not None:
                 updates["entity_category"] = None
             if updates:
                 entity_registry.async_update_entity(entity_id, **updates)
@@ -167,7 +221,7 @@ def restore_panel_entity_visibility(hass: HomeAssistant, device: CustomerDevice)
 def resolve_entity_id_for_function(
     hass: HomeAssistant, device: CustomerDevice, function: DeviceFunction
 ) -> str | None:
-    """Resolve entity_id for a panel function, including hardcoded entities."""
+    """Resolve entity_id for a panel function."""
     if function.type == "hourmin":
         return resolve_entity_id(hass, device.id, function.code, "time")
 

@@ -1,45 +1,40 @@
 {
-    "category": "xnyjcn",
-    "functions": {
-        "group1": [
-            {
-                "code": "cell_heating",
-                "type": "Boolean",
-                "values": "{}"
-            },
-            {
-                "code": "expansion_pack_count",
-                "type": "Integer",
-                "values": "{\"unit\":\"\",\"min\":0,\"max\":99999,\"scale\":0,\"step\":1}"
-            },
-            {
-                "code": "regulation_grid_export_p_limit",
-                "type": "Integer",
-                "values": "{\"unit\":\"W\",\"min\":0,\"max\":30000,\"scale\":0,\"step\":1}"
-            }
-        ],
-        "group2": [
-            {
-                "code": "peak_shaving_enable",
-                "type": "Boolean",
-                "values": "{}"
-            },
-            {
-                "code": "peak_shaving_threshold",
-                "type": "Integer",
-                "values": "{\"unit\":\"W\",\"min\":0,\"max\":30000,\"scale\":0,\"step\":1}"
-            },
-            {
-                "code": "indicator_light_mode",
-                "type": "Enum",
-                "values": "{\"range\":[\"0\",\"1\",\"2\"]}"
-            },
-            {
-                "code": "time_start_1",
-                "name": "Start time 1",
-                "type": "hourmin",
-                "values": "{}"
-            }
-        ]
-    }
+    "functions": [
+        {
+            "code": "day_time1_end",
+            "type": "hourmin",
+            "values": "{}",
+            "name": "Schedule 1 End Time"
+        },
+        {
+            "code": "day_time1_ignore_anti_backflow",
+            "type": "Boolean",
+            "values": "{}",
+            "name": "Schedule 1 - Ignore Anti Feedin"
+        },
+        {
+            "code": "day_time1_mode",
+            "type": "Enum",
+            "values": "{\"range\":[\"0\",\"1\"]}",
+            "name": "Schedule 1 Work Mode"
+        },
+        {
+            "code": "day_time1_power",
+            "type": "Integer",
+            "values": "{\"min\":0,\"max\":65535,\"scale\":0,\"step\":1,\"unit\":\"W\"}",
+            "name": "Schedule 1 Discharge Power"
+        }
+    ],
+    "status": [
+        {
+            "code": "serial_number",
+            "type": "String",
+            "values": "{\"maxlen\":255}"
+        },
+        {
+            "code": "battery_capacity",
+            "type": "Integer",
+            "values": "{\"unit\":\"kW·h\",\"min\":0,\"max\":1000000,\"scale\":3,\"step\":1}"
+        }
+    ]
 }

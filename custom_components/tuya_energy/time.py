@@ -11,6 +11,7 @@ from homeassistant.components.time import TimeEntity, TimeEntityDescription
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
+from homeassistant.helpers.entity import EntityCategory
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
 from .const import DOMAIN, TUYA_DISCOVERY_NEW
@@ -86,9 +87,14 @@ class TuyaPanelHourminTimeEntity(TuyaEntity, TimeEntity):
         device: CustomerDevice,
         device_manager: Manager,
         function: DeviceFunction,
+        entity_category: EntityCategory | None = None,
     ) -> None:
         """Initialize an hourmin time entity."""
-        super().__init__(device, device_manager, build_time_description(function))
+        super().__init__(
+            device,
+            device_manager,
+            build_time_description(function, entity_category=entity_category),
+        )
         self._code = function.code
 
     @property

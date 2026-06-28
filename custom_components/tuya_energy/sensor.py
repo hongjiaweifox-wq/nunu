@@ -54,6 +54,12 @@ from .const import (
 )
 from .coordinator import TuyaConfigEntry
 from .entity import TuyaEntity
+from .panel_entity_discovery import (
+    build_panel_status_sensor_description,
+    get_panel_status_sensor_definition,
+    is_panel_device,
+    iter_panel_status_sensors,
+)
 from .util import get_device_temp_unit_convert
 
 CURRENT_WRAPPER = (ElectricityCurrentRawWrapper, ElectricityCurrentJsonWrapper)
@@ -1383,77 +1389,6 @@ SENSORS: dict[DeviceCategory, tuple[TuyaSensorEntityDescription, ...]] = {
         *BATTERY_SENSORS,
     ),
     DeviceCategory.WXKG: BATTERY_SENSORS,
-    DeviceCategory.XNYJCN: (
-        TuyaSensorEntityDescription(
-            key=DPCode.CURRENT_SOC,
-            translation_key="battery_soc",
-            device_class=SensorDeviceClass.BATTERY,
-            state_class=SensorStateClass.MEASUREMENT,
-            entity_category=EntityCategory.DIAGNOSTIC,
-        ),
-        TuyaSensorEntityDescription(
-            key=DPCode.PV_POWER_TOTAL,
-            translation_key="total_pv_power",
-            device_class=SensorDeviceClass.POWER,
-            state_class=SensorStateClass.MEASUREMENT,
-        ),
-        TuyaSensorEntityDescription(
-            key=DPCode.PV_POWER_CHANNEL_1,
-            translation_key="pv_channel_power",
-            translation_placeholders={"index": "1"},
-            device_class=SensorDeviceClass.POWER,
-            state_class=SensorStateClass.MEASUREMENT,
-        ),
-        TuyaSensorEntityDescription(
-            key=DPCode.PV_POWER_CHANNEL_2,
-            translation_key="pv_channel_power",
-            translation_placeholders={"index": "2"},
-            device_class=SensorDeviceClass.POWER,
-            state_class=SensorStateClass.MEASUREMENT,
-        ),
-        TuyaSensorEntityDescription(
-            key=DPCode.BATTERY_POWER,
-            translation_key="battery_power",
-            device_class=SensorDeviceClass.POWER,
-            state_class=SensorStateClass.MEASUREMENT,
-        ),
-        TuyaSensorEntityDescription(
-            key=DPCode.INVERTER_OUTPUT_POWER,
-            translation_key="inverter_output_power",
-            device_class=SensorDeviceClass.POWER,
-            state_class=SensorStateClass.MEASUREMENT,
-        ),
-        TuyaSensorEntityDescription(
-            key=DPCode.CUMULATIVE_ENERGY_GENERATED_PV,
-            translation_key="lifetime_pv_energy",
-            device_class=SensorDeviceClass.ENERGY,
-            state_class=SensorStateClass.TOTAL_INCREASING,
-        ),
-        TuyaSensorEntityDescription(
-            key=DPCode.CUMULATIVE_ENERGY_OUTPUT_INV,
-            translation_key="lifetime_inverter_output_energy",
-            device_class=SensorDeviceClass.ENERGY,
-            state_class=SensorStateClass.TOTAL_INCREASING,
-        ),
-        TuyaSensorEntityDescription(
-            key=DPCode.CUMULATIVE_ENERGY_DISCHARGED,
-            translation_key="lifetime_battery_discharge_energy",
-            device_class=SensorDeviceClass.ENERGY,
-            state_class=SensorStateClass.TOTAL_INCREASING,
-        ),
-        TuyaSensorEntityDescription(
-            key=DPCode.CUMULATIVE_ENERGY_CHARGED,
-            translation_key="lifetime_battery_charge_energy",
-            device_class=SensorDeviceClass.ENERGY,
-            state_class=SensorStateClass.TOTAL_INCREASING,
-        ),
-        TuyaSensorEntityDescription(
-            key=DPCode.CUML_E_EXPORT_OFFGRID1,
-            translation_key="lifetime_offgrid_port_energy",
-            device_class=SensorDeviceClass.ENERGY,
-            state_class=SensorStateClass.TOTAL_INCREASING,
-        ),
-    ),
     DeviceCategory.YLCG: (
         TuyaSensorEntityDescription(
             key=DPCode.PRESSURE_VALUE,
@@ -1709,6 +1644,18 @@ async def async_setup_entry(
                         )
                     )
                 )
+
+            if is_panel_device(device):
+                for entry in iter_panel_status_sensors(device):
+                    description = build_panel_status_sensor_description(entry)
+                    if definition := get_panel_status_sensor_definition(
+                        device, description.key
+                    ):
+                        entities.append(
+                            TuyaSensorEntity(
+                                device, manager, description, definition
+                            )
+                        )
 
         async_add_entities(entities)
 

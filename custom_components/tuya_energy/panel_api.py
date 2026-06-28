@@ -23,7 +23,7 @@ from .panel_functions import (
     DYNAMIC_PANEL_CATEGORIES,
     apply_function_group_via_api,
     build_panel_state,
-    ensure_device_function_groups,
+    ensure_device_energy_schema,
     fetch_function_history_from_api,
     notify_panel_commands_applied,
     validate_group_commands,
@@ -95,7 +95,7 @@ async def websocket_get_panel_functions(
         connection.send_error(msg["id"], "not_found", str(err))
         return
 
-    await ensure_device_function_groups(hass, manager, device)
+    await ensure_device_energy_schema(hass, manager, device)
     connection.send_result(msg["id"], build_panel_state(hass, device))
 
 
@@ -118,7 +118,7 @@ async def websocket_get_panel_function_history(
         return
 
     code = msg["code"]
-    await ensure_device_function_groups(hass, manager, device)
+    await ensure_device_energy_schema(hass, manager, device)
     allowed_codes = {
         function.code
         for functions in device.function_groups.values()
@@ -162,7 +162,7 @@ async def websocket_set_panel_functions(
 
     group_id = msg["group_id"]
     commands = msg["commands"]
-    await ensure_device_function_groups(hass, manager, device)
+    await ensure_device_energy_schema(hass, manager, device)
     try:
         validate_group_commands(device, group_id, commands)
     except ValueError as err:

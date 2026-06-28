@@ -61,6 +61,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: TuyaConfigEntry) -> bool
     await preload_panel_devices(hass, manager)
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+    await hass.async_block_till_done()
+
+    from .panel_entity_discovery import is_panel_device, prune_obsolete_panel_config_entities
+
+    for device in manager.device_map.values():
+        if is_panel_device(device):
+            prune_obsolete_panel_config_entities(hass, device)
+
     # If the device does not register any entities,
     # the device does not need to subscribe
     # So the subscription is here

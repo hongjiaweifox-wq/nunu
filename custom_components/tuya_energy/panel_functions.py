@@ -326,6 +326,10 @@ async def _apply_mock_energy_schema(
     else:
         device.function_groups = {}
 
+    from .panel_entity_discovery import restrict_device_functions_to_panel
+
+    restrict_device_functions_to_panel(device)
+
     LOGGER.debug(
         "Loaded mock energy schema for device %s: %d functions, %d status, "
         "%d panel groups from %s",
@@ -398,6 +402,10 @@ async def ensure_device_energy_schema(
     else:
         device.function_groups = {}
 
+    from .panel_entity_discovery import restrict_device_functions_to_panel
+
+    restrict_device_functions_to_panel(device)
+
     LOGGER.debug(
         "Loaded energy schema for device %s: %d functions, %d status, "
         "%d panel groups, %d status entities from %s",
@@ -412,10 +420,14 @@ async def ensure_device_energy_schema(
 
 async def preload_panel_devices(hass: HomeAssistant, manager: Manager) -> None:
     """Load panel function groups for all supported devices before entity setup."""
-    from .panel_entity_discovery import restore_panel_entity_visibility
+    from .panel_entity_discovery import (
+        prune_obsolete_panel_config_entities,
+        restore_panel_entity_visibility,
+    )
 
     for device in manager.device_map.values():
         await ensure_device_energy_schema(hass, manager, device)
+        prune_obsolete_panel_config_entities(hass, device)
         restore_panel_entity_visibility(hass, device)
 
 

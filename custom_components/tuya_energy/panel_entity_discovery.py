@@ -14,11 +14,12 @@ from homeassistant.components.select import SelectEntityDescription
 from homeassistant.components.switch import SwitchEntityDescription
 from homeassistant.components.time import TimeEntityDescription
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.entity import EntityCategory
 from homeassistant.helpers.entity_registry import RegistryEntryHider
 
-from .const import DOMAIN
+from .const import DOMAIN, LOGGER
 from .panel_functions import DYNAMIC_PANEL_CATEGORIES, format_function_label
 
 PANEL_TYPE_TO_PLATFORM: dict[str, str] = {
@@ -183,6 +184,82 @@ def get_panel_grouped_codes(device: CustomerDevice) -> set[str]:
     for functions in getattr(device, "function_groups", {}).values():
         grouped_codes.update(function.code for function in functions)
     return grouped_codes
+
+
+def get_panel_status_codes(device: CustomerDevice) -> set[str]:
+    """Return read-only status DP codes allowed for panel sensor entities."""
+    status_codes: set[str] = set()
+    grouped_codes = get_panel_grouped_codes(device)
+    for entry in get_panel_status_entities(device):
+        if not isinstance(entry, dict) or "code" not in entry:
+            continue
+        code = str(entry["code"])
+        if code in grouped_codes:
+            continue
+        if str(entry.get("type", "")) not in PANEL_STATUS_SENSOR_TYPES:
+            continue
+        status_codes.add(code)
+    return status_codes
+
+
+def restrict_device_functions_to_panel(device: CustomerDevice) -> None:
+    """Keep only panel-group writable DPs in device.function."""
+    if not is_panel_device(device):
+        return
+    allowed_codes = get_panel_grouped_codes(device)
+    for code in list(device.function.keys()):
+        if code not in allowed_codes:
+            device.function.pop(code, None)
+
+
+def prune_obsolete_panel_config_entities(
+    hass: HomeAssistant, device: CustomerDevice
+) -> None:
+    """Remove panel entities that are not in the current mock/API schema."""
+    if not is_panel_device(device):
+        return
+
+    from .const import DOMAIN
+
+    device_registry = dr.async_get(hass)
+    device_entry = device_registry.async_get_device(
+        identifiers={(DOMAIN, device.id)}
+    )
+    if device_entry is None:
+        return
+
+    allowed_config_codes = get_panel_grouped_codes(device)
+    allowed_sensor_codes = get_panel_status_codes(device)
+    entity_registry = er.async_get(hass)
+    expected_prefix = panel_unique_id(device.id, "")
+    stale_entity_ids: list[tuple[str, str]] = []
+    for entry in er.async_entries_for_device(
+        entity_registry, device_entry.id, include_disabled_entities=True
+    ):
+        if entry.platform != DOMAIN:
+            continue
+        if not entry.unique_id.startswith(expected_prefix):
+            continue
+        code = entry.unique_id.removeprefix(expected_prefix)
+        if entry.domain in CONFIG_PLATFORMS:
+            if code not in allowed_config_codes:
+                stale_entity_ids.append((entry.entity_id, "config"))
+            continue
+        if entry.domain == "sensor" and code not in allowed_sensor_codes:
+            stale_entity_ids.append((entry.entity_id, "sensor"))
+
+    for entity_id, kind in stale_entity_ids:
+        entry = entity_registry.async_get(entity_id)
+        if entry is None:
+            continue
+        delete_key = (entry.domain, entry.platform, entry.unique_id)
+        entity_registry.async_remove(entity_id)
+        entity_registry.deleted_entities.pop(delete_key, None)
+        LOGGER.info(
+            "Removing obsolete panel %s entity %s (not in panel schema)",
+            kind,
+            entity_id,
+        )
 
 
 def is_panel_grouped_code(device: CustomerDevice, code: str) -> bool:

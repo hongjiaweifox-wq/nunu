@@ -1633,17 +1633,18 @@ async def async_setup_entry(
         for device_id in device_ids:
             device = manager.device_map[device_id]
             if descriptions := SENSORS.get(device.category):
-                entities.extend(
-                    TuyaSensorEntity(device, manager, description, definition)
-                    for description in descriptions
-                    if (
-                        definition := get_default_definition(
-                            device,
-                            description.dpcode or description.key,
-                            description.wrapper_class,
+                if not is_panel_device(device):
+                    entities.extend(
+                        TuyaSensorEntity(device, manager, description, definition)
+                        for description in descriptions
+                        if (
+                            definition := get_default_definition(
+                                device,
+                                description.dpcode or description.key,
+                                description.wrapper_class,
+                            )
                         )
                     )
-                )
 
             if is_panel_device(device):
                 for entry in iter_panel_status_sensors(device):

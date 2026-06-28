@@ -148,10 +148,13 @@ class DeviceListener(SharingDeviceListener):
 
     async def _async_discover_panel_device(self, device_id: str) -> None:
         """Load panel schema and discover entities for a panel device."""
+        from .panel_entity_discovery import prune_obsolete_panel_config_entities
+
         device = self.manager.device_map.get(device_id)
         if device is None:
             return
         await ensure_device_energy_schema(self.hass, self.manager, device)
+        prune_obsolete_panel_config_entities(self.hass, device)
         async_dispatcher_send(self.hass, TUYA_DISCOVERY_NEW, [device_id])
 
     @callback

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from collections.abc import Iterator
 from typing import Any
 
@@ -20,7 +21,11 @@ from homeassistant.helpers.entity import EntityCategory
 from homeassistant.helpers.entity_registry import RegistryEntryHider
 
 from .const import DOMAIN, LOGGER
-from .panel_functions import DYNAMIC_PANEL_CATEGORIES, format_function_label
+from .panel_functions import (
+    DYNAMIC_PANEL_CATEGORIES,
+    format_function_label,
+    get_panel_entity_whitelist_codes,
+)
 
 PANEL_TYPE_TO_PLATFORM: dict[str, str] = {
     "Boolean": "switch",
@@ -34,9 +39,90 @@ PANEL_STATUS_SENSOR_TYPES = frozenset({"Integer", "Enum", "String"})
 CONFIG_PLATFORMS = ("number", "select", "switch", "time")
 
 
+def _normalize_integer_status_value(
+    value: Any, *, min_val: int, max_val: int, scale: int
+) -> Any:
+    """Convert /sta display values to raw INTEGER device status."""
+    if isinstance(value, bool) or value is None:
+        return value
+    if isinstance(value, int):
+        return value
+
+    if isinstance(value, str):
+        if scale > 0:
+            try:
+                display_value = float(value)
+                raw_value = round(display_value * (10**scale))
+                if min_val <= raw_value <= max_val:
+                    return raw_value
+            except ValueError:
+                pass
+        try:
+            raw_value = int(value)
+            if min_val <= raw_value <= max_val:
+                return raw_value
+        except ValueError:
+            pass
+        return value
+
+    if isinstance(value, float):
+        if scale > 0:
+            raw_value = round(value * (10**scale))
+            if min_val <= raw_value <= max_val:
+                return raw_value
+        raw_value = round(value)
+        if min_val <= raw_value <= max_val:
+            return raw_value
+
+    return value
+
+
+def normalize_panel_device_status(
+    device: CustomerDevice,
+    codes: list[str] | None = None,
+) -> None:
+    """Normalize panel INTEGER status values for tuya_device_handlers."""
+    if not is_panel_device(device):
+        return
+
+    targets = codes if codes else list(device.status.keys())
+    for code in targets:
+        if code not in device.status:
+            continue
+        status_range = device.status_range.get(code)
+        if status_range is None or status_range.type != "Integer":
+            continue
+        try:
+            range_values = json.loads(status_range.values)
+        except (json.JSONDecodeError, TypeError):
+            continue
+
+        normalized = _normalize_integer_status_value(
+            device.status[code],
+            min_val=int(range_values.get("min", 0)),
+            max_val=int(range_values.get("max", 0)),
+            scale=int(range_values.get("scale", 0)),
+        )
+        device.status[code] = normalized
+
+
 def is_panel_device(device: CustomerDevice) -> bool:
     """Return whether the device supports dynamic panel entities."""
     return device.category in DYNAMIC_PANEL_CATEGORIES
+
+
+def panel_entity_whitelist(device: CustomerDevice) -> frozenset[str]:
+    """Return allowed panel entity codes for a device."""
+    whitelist = getattr(device, "panel_entity_whitelist", None)
+    if whitelist is None:
+        whitelist = get_panel_entity_whitelist_codes()
+        device.panel_entity_whitelist = whitelist
+    return whitelist
+
+
+def is_panel_whitelisted_code(device: CustomerDevice, code: str) -> bool:
+    """Return whether a DP code is allowed by the panel entity whitelist."""
+    return code in panel_entity_whitelist(device)
 
 
 def panel_unique_id(tuya_device_id: str, code: str) -> str:
@@ -63,6 +149,8 @@ def iter_panel_status_sensors(
         if not isinstance(entry, dict) or "code" not in entry:
             continue
         code = str(entry["code"])
+        if not is_panel_whitelisted_code(device, code):
+            continue
         if code in grouped_codes or code in seen:
             continue
         if str(entry.get("type", "")) not in PANEL_STATUS_SENSOR_TYPES:
@@ -113,6 +201,8 @@ def iter_panel_functions(
     for functions in getattr(device, "function_groups", {}).values():
         for function in functions:
             code = function.code
+            if not is_panel_whitelisted_code(device, code):
+                continue
             if code in seen:
                 continue
             platform = PANEL_TYPE_TO_PLATFORM.get(function.type)
@@ -194,6 +284,8 @@ def get_panel_status_codes(device: CustomerDevice) -> set[str]:
         if not isinstance(entry, dict) or "code" not in entry:
             continue
         code = str(entry["code"])
+        if not is_panel_whitelisted_code(device, code):
+            continue
         if code in grouped_codes:
             continue
         if str(entry.get("type", "")) not in PANEL_STATUS_SENSOR_TYPES:
@@ -256,7 +348,7 @@ def prune_obsolete_panel_config_entities(
         entity_registry.async_remove(entity_id)
         entity_registry.deleted_entities.pop(delete_key, None)
         LOGGER.info(
-            "Removing obsolete panel %s entity %s (not in panel schema)",
+            "Removing obsolete panel %s entity %s (not in panel whitelist)",
             kind,
             entity_id,
         )

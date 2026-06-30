@@ -102,6 +102,14 @@ class DeviceListener(SharingDeviceListener):
         dp_timestamps: dict[str, int] | None = None,
     ) -> None:
         """Handle device update event."""
+        from .panel_entity_discovery import (
+            is_panel_device,
+            normalize_panel_device_status,
+        )
+
+        if is_panel_device(device):
+            normalize_panel_device_status(device, updated_status_properties)
+
         LOGGER.debug(
             "Received update for device %s (online: %s): %s"
             " (updated properties: %s, dp_timestamps: %s)",

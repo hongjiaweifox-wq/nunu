@@ -28,6 +28,7 @@ from .coordinator import TuyaConfigEntry
 from .entity import TuyaEntity
 from .panel_entity_discovery import (
     build_number_description,
+    is_panel_device,
     iter_panel_functions,
 )
 from .util import get_device_temp_unit_convert
@@ -497,12 +498,13 @@ async def async_setup_entry(
         for device_id in device_ids:
             device = manager.device_map[device_id]
             if descriptions := NUMBERS.get(device.category):
-                for description in descriptions:
-                    if definition := get_default_definition(device, description.key):
-                        entity = TuyaNumberEntity(
-                            device, manager, description, definition
-                        )
-                        entities.append(entity)
+                if not is_panel_device(device):
+                    for description in descriptions:
+                        if definition := get_default_definition(device, description.key):
+                            entity = TuyaNumberEntity(
+                                device, manager, description, definition
+                            )
+                            entities.append(entity)
 
             for function, platform in iter_panel_functions(device):
                 if platform != "number":

@@ -1,7 +1,7 @@
 {
     "functions": [
         {
-            "code": "day_time1_end",
+            "code": "plug_mon_time1_start",
             "type": "hourmin",
             "values": "{}",
             "name": "Schedule 1 End Time"
@@ -13,10 +13,10 @@
             "name": "Schedule 1 - Ignore Anti Feedin"
         },
         {
-            "code": "day_time1_mode",
+            "code": "work_mode",
             "type": "Enum",
-            "values": "{\"range\":[\"0\",\"1\"]}",
-            "name": "Schedule 1 Work Mode"
+            "values": "{\"range\":[\"1\",\"2\",\"3\",\"5\"]}",
+            "name": "Indicator light mode"
         },
         {
             "code": "day_time1_power",
@@ -27,7 +27,7 @@
     ],
     "status": [
         {
-            "code": "serial_number",
+            "code": "controller_sn_serial_number",
             "type": "String",
             "values": "{\"maxlen\":255}"
         },

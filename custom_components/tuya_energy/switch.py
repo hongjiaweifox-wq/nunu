@@ -23,6 +23,7 @@ from .coordinator import TuyaConfigEntry
 from .entity import TuyaEntity
 from .panel_entity_discovery import (
     build_switch_description,
+    is_panel_device,
     iter_panel_functions,
 )
 
@@ -933,12 +934,13 @@ async def async_setup_entry(
         for device_id in device_ids:
             device = manager.device_map[device_id]
             if descriptions := SWITCHES.get(device.category):
-                for description in descriptions:
-                    if definition := get_default_definition(device, description.key):
-                        entity = TuyaSwitchEntity(
-                            device, manager, description, definition
-                        )
-                        entities.append(entity)
+                if not is_panel_device(device):
+                    for description in descriptions:
+                        if definition := get_default_definition(device, description.key):
+                            entity = TuyaSwitchEntity(
+                                device, manager, description, definition
+                            )
+                            entities.append(entity)
 
             for function, platform in iter_panel_functions(device):
                 if platform != "switch":

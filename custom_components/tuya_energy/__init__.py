@@ -2,8 +2,9 @@
 
 from tuya_sharing import Manager
 
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import config_validation as cv, device_registry as dr
+from homeassistant.helpers.event import async_call_later
 from homeassistant.helpers.typing import ConfigType
 
 from .const import (
@@ -61,13 +62,20 @@ async def async_setup_entry(hass: HomeAssistant, entry: TuyaConfigEntry) -> bool
     await preload_panel_devices(hass, manager)
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
-    await hass.async_block_till_done()
 
-    from .panel_entity_discovery import is_panel_device, prune_obsolete_panel_config_entities
+    @callback
+    def _prune_panel_entities_later(_now) -> None:
+        """Prune stale panel entities after platforms finish without blocking bootstrap."""
+        from .panel_entity_discovery import (
+            is_panel_device,
+            prune_obsolete_panel_config_entities,
+        )
 
-    for device in manager.device_map.values():
-        if is_panel_device(device):
-            prune_obsolete_panel_config_entities(hass, device)
+        for device in manager.device_map.values():
+            if is_panel_device(device):
+                prune_obsolete_panel_config_entities(hass, device)
+
+    async_call_later(hass, 0, _prune_panel_entities_later)
 
     # If the device does not register any entities,
     # the device does not need to subscribe

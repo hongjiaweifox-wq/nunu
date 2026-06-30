@@ -317,12 +317,13 @@
             }
         },
         "select": {
-            "indicator_light_mode": {
-                "name": "Indicator light mode",
+            "work_mode": {
+                "name": "Inverter work mode",
                 "state": {
-                    "0": "eco",
-                    "1": "on",
-                    "2": "off"
+                    "1": "self",
+                    "2": "tou",
+                    "3": "manual",
+                    "5": "diy"
                 }
             },
             "basic_anti_flicker": {

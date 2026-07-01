@@ -6,8 +6,6 @@ import json
 import re
 from typing import Any
 
-DEFAULT_CATEGORY = "xnyjcn"
-
 PANEL_DP_TYPES = frozenset({"Boolean", "Integer", "Enum", "String", "hourmin"})
 PANEL_EXCLUDED_GROUPS = frozenset({0})
 
@@ -37,6 +35,15 @@ def _is_wire_enum_token(value: str) -> bool:
     if " " in value or "-" in value:
         return False
     return bool(_WIRE_ENUM_TOKEN.match(value))
+
+
+def _to_float(value: Any) -> float:
+    """Convert numeric spec field to float."""
+    if isinstance(value, bool):
+        return float(value)
+    if isinstance(value, (int, float)):
+        return float(value)
+    return float(str(value))
 
 
 def _to_int(value: Any) -> int:
@@ -114,11 +121,18 @@ def build_values_payload(dp_type: str, data_spec: dict[str, Any]) -> dict[str, A
     if dp_type in {"Boolean", "hourmin"}:
         return {}
     if dp_type == "Integer":
+        scale = _to_int(data_spec.get("scale", 0))
+        min_display = _to_float(data_spec.get("min", 0))
+        max_display = _to_float(data_spec.get("max", 0))
+        step_display = _to_float(data_spec.get("step", 1))
+        factor = 10**scale if scale > 0 else 1
         payload: dict[str, Any] = {
-            "min": _to_int(data_spec.get("min", 0)),
-            "max": _to_int(data_spec.get("max", 0)),
-            "scale": _to_int(data_spec.get("scale", 0)),
-            "step": _to_int(data_spec.get("step", 1)),
+            "min": int(round(min_display * factor)),
+            "max": int(round(max_display * factor)),
+            "scale": scale,
+            "step": max(1, int(round(step_display * factor)))
+            if scale > 0
+            else _to_int(step_display),
         }
         unit = data_spec.get("unit")
         payload["unit"] = "" if unit is None else str(unit)
@@ -167,7 +181,7 @@ def convert_model_entry(entry: dict[str, Any]) -> dict[str, str] | None:
 def convert_energy_model(
     model_entries: list[dict[str, Any]],
     *,
-    category: str = DEFAULT_CATEGORY,
+    category: str,
 ) -> dict[str, Any]:
     """Convert energy model list to report/command instruction set document."""
     result: dict[str, Any] = {
@@ -188,17 +202,17 @@ def convert_energy_model(
     return result
 
 
-def _dedupe_panel_functions_by_type(
+def _dedupe_panel_functions_by_code(
     functions: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
-    """Keep one representative item per DP type in a panel group."""
+    """Keep one item per DP code in a panel function list."""
     seen: set[str] = set()
     deduped: list[dict[str, Any]] = []
     for item in functions:
-        dp_type = item["type"]
-        if dp_type in seen:
+        code = str(item.get("code", ""))
+        if not code or code in seen:
             continue
-        seen.add(dp_type)
+        seen.add(code)
         deduped.append(item)
     return deduped
 
@@ -206,9 +220,14 @@ def _dedupe_panel_functions_by_type(
 def convert_panel_functions(
     model_entries: list[dict[str, Any]],
     *,
-    category: str = DEFAULT_CATEGORY,
+    allowed_codes: frozenset[str] | None = None,
 ) -> list[dict[str, Any]]:
-    """Convert setting entries to flat panel function list."""
+    """Convert setting entries to flat panel function list.
+
+    Group ``0`` (Default) is normally excluded to avoid flooding the panel with
+    hundreds of settings. Codes in ``allowed_codes`` are still included so
+    whitelisted entities such as ``work_mode`` can be discovered.
+    """
     functions: list[dict[str, Any]] = []
 
     for entry in model_entries:
@@ -218,9 +237,11 @@ def convert_panel_functions(
         if converted is None or converted["type"] not in PANEL_DP_TYPES:
             continue
 
+        code = str(converted["code"])
         group_id = entry.get("group", 0)
         if group_id in PANEL_EXCLUDED_GROUPS:
-            continue
+            if allowed_codes is None or code not in allowed_codes:
+                continue
 
         item: dict[str, Any] = dict(converted)
         if name := entry.get("name"):
@@ -228,20 +249,23 @@ def convert_panel_functions(
         functions.append(item)
 
     functions.sort(key=lambda item: item["code"])
-    return _dedupe_panel_functions_by_type(functions)
+    return _dedupe_panel_functions_by_code(functions)
 
 
 def parse_energy_specifications_response(
     result: Any,
     *,
-    category: str = DEFAULT_CATEGORY,
+    category: str,
+    allowed_panel_codes: frozenset[str] | None = None,
 ) -> tuple[dict[str, Any], list[dict[str, Any]]] | None:
     """Parse energy specifications API result into instruction set + panel list."""
     model_entries = extract_energy_model_entries(result)
     if model_entries is not None:
         return (
             convert_energy_model(model_entries, category=category),
-            convert_panel_functions(model_entries, category=category),
+            convert_panel_functions(
+                model_entries, allowed_codes=allowed_panel_codes
+            ),
         )
 
     if not isinstance(result, dict):
@@ -273,3 +297,28 @@ def parse_energy_specifications_response(
         )
 
     return None
+
+
+def parse_energy_properties_response(result: Any) -> dict[str, Any]:
+    """Parse List[DeviceModelPropertyValueVO] into {code: value}.
+
+    API item shape::
+
+        {"code": "day_time1_end", "value": "1059", "time": "1776046921026"}
+
+    ``value`` and ``time`` are strings on the wire; ``time`` is ignored here.
+    """
+    properties: dict[str, Any] = {}
+
+    if not isinstance(result, list):
+        return properties
+
+    for item in result:
+        if not isinstance(item, dict):
+            continue
+        code = item.get("code")
+        if not code or "value" not in item:
+            continue
+        properties[str(code)] = item["value"]
+
+    return properties

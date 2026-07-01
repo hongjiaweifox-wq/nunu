@@ -1,12 +1,12 @@
 /**
  * Inject Tuya xnyjcn grouped configuration into the device detail page.
- * Loaded globally via add_extra_js_url (ES module import on modern browsers).
+ * Only loaded when DEVICE_PAGE_GROUPED_PANEL_ENABLED is true in panel_api.py.
  */
 
 /** Mirror panel_api.DEVICE_PAGE_GROUPED_PANEL_ENABLED when this script is registered. */
 const DEVICE_PAGE_EMBED_ENABLED = false;
 
-const PANEL_STATIC_VERSION = "7";
+const PANEL_STATIC_VERSION = "9";
 const PANEL_SCRIPT = `/tuya_xnyjcn_panel_static/tuya-xnyjcn-panel.js?v=${PANEL_STATIC_VERSION}`;
 const EMBED_ROOT_ID = "tuya-xnyjcn-embed-root";
 const DEVICE_PATH_RE = /\/config\/devices\/device\/([^/?#]+)/;

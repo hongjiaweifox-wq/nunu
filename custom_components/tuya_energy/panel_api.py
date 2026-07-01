@@ -24,6 +24,7 @@ from .panel_functions import (
     apply_function_group_via_api,
     build_panel_state,
     ensure_device_energy_schema,
+    ensure_panel_energy_properties,
     fetch_function_history_from_api,
     notify_panel_commands_applied,
     validate_group_commands,
@@ -33,9 +34,11 @@ from .services import _get_tuya_device
 URL_BASE = "/tuya_xnyjcn_panel_static"
 PANEL_URL_PATH = "tuya-xnyjcn-panel"
 PANEL_WEBCOMPONENT = "tuya-xnyjcn-panel"
-PANEL_STATIC_VERSION = "7"
-# Device detail page "Grouped configuration" card; sidebar panel remains available.
+PANEL_STATIC_VERSION = "9"
+# Grouped configuration card on the HA device detail page (UI only).
 DEVICE_PAGE_GROUPED_PANEL_ENABLED = False
+# Sidebar "Tuya Device Panel" menu entry.
+PANEL_SIDEBAR_ENABLED = False
 EMBED_SCRIPT_URL = (
     f"{URL_BASE}/tuya-xnyjcn-device-embed.js?v={PANEL_STATIC_VERSION}"
 )
@@ -96,6 +99,7 @@ async def websocket_get_panel_functions(
         return
 
     await ensure_device_energy_schema(hass, manager, device)
+    await ensure_panel_energy_properties(hass, manager, device)
     connection.send_result(msg["id"], build_panel_state(hass, device))
 
 
@@ -267,19 +271,25 @@ async def async_register_tuya_panel(hass: HomeAssistant) -> None:
         hass.data[f"{DOMAIN}_panel_static_registered"] = True
 
     if DEVICE_PAGE_GROUPED_PANEL_ENABLED:
-        add_extra_js_url(hass, EMBED_SCRIPT_URL)
-    else:
-        remove_extra_js_url(hass, EMBED_SCRIPT_URL)
-        for legacy_version in ("6",):
+        add_extra_js_url(hass, EMBED_SCRIPT_URL, es5=True)
+        for legacy_version in ("6", "7", "8"):
             remove_extra_js_url(
                 hass,
                 f"{URL_BASE}/tuya-xnyjcn-device-embed.js?v={legacy_version}",
+            )
+    else:
+        remove_extra_js_url(hass, EMBED_SCRIPT_URL, es5=True)
+        for legacy_version in ("6", "7", "8"):
+            remove_extra_js_url(
+                hass,
+                f"{URL_BASE}/tuya-xnyjcn-device-embed.js?v={legacy_version}",
+                es5=True,
             )
 
     if hass.data.get(f"{DOMAIN}_panel_registered"):
         return
 
-    if not async_panel_exists(hass, PANEL_URL_PATH):
+    if PANEL_SIDEBAR_ENABLED and not async_panel_exists(hass, PANEL_URL_PATH):
         await panel_custom.async_register_panel(
             hass=hass,
             frontend_url_path=PANEL_URL_PATH,

@@ -4,5 +4,6 @@
   "day_time1_power",
   "day_time1_end",
   "work_mode",
-  "battery_capacity"
+  "battery_capacity",
+  "total_photovoltaic_power"
 ]

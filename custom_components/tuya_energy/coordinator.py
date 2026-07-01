@@ -29,7 +29,10 @@ from .const import (
     TUYA_DISCOVERY_NEW,
     TUYA_HA_SIGNAL_UPDATE_ENTITY,
 )
-from .panel_api import get_panel_configuration_url
+from .panel_api import (
+    PANEL_SIDEBAR_ENABLED,
+    get_panel_configuration_url,
+)
 from .panel_functions import (
     DYNAMIC_PANEL_CATEGORIES,
     ensure_device_energy_schema,
@@ -176,7 +179,7 @@ class DeviceListener(SharingDeviceListener):
             config_entry_id=self._entry.entry_id,
             **get_device_info(device, initial=True),
         )
-        if device.category in DYNAMIC_PANEL_CATEGORIES:
+        if device.category in DYNAMIC_PANEL_CATEGORIES and PANEL_SIDEBAR_ENABLED:
             device_registry.async_update_device(
                 device_entry.id,
                 configuration_url=get_panel_configuration_url(device_entry.id),

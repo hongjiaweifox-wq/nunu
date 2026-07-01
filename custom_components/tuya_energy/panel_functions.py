@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 from pathlib import Path
 from typing import Any
@@ -14,7 +15,10 @@ from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
 
 from .const import LOGGER
-from .energy_model_converter import parse_energy_specifications_response
+from .energy_model_converter import (
+    parse_energy_properties_response,
+    parse_energy_specifications_response,
+)
 from .hourmin import hourmin_to_time
 
 DYNAMIC_PANEL_CATEGORIES = frozenset({"xnyjcn"})
@@ -22,8 +26,9 @@ PANEL_FUNCTIONS_MOCK_DIR = "mock"
 PANEL_FUNCTIONS_MOCK_FILE = "tuya_panel_functions.json"
 PANEL_ENTITY_WHITELIST_DIR = "filter"
 PANEL_ENTITY_WHITELIST_FILE = "code.json"
-USE_MOCK_PANEL_FUNCTIONS = True
+USE_MOCK_PANEL_FUNCTIONS = False
 SPECIFICATIONS_API_PATH = "/v1.0/m/life/ha/{device_id}/energy/specifications"
+PROPERTIES_API_PATH = "/v1.0/m/life/ha/{device_id}/energy/properties"
 COMMANDS_API_PATH = "/v1.0/m/life/ha/{device_id}/energy/commands"
 
 TYPE_PLATFORM_MAP = {
@@ -492,7 +497,7 @@ async def ensure_device_energy_schema(
     if device.category not in DYNAMIC_PANEL_CATEGORIES:
         return
 
-    attach_panel_entity_whitelist(device)
+    whitelist = attach_panel_entity_whitelist(device)
 
     if USE_MOCK_PANEL_FUNCTIONS:
         await _apply_mock_energy_schema(hass, device)
@@ -504,7 +509,9 @@ async def ensure_device_energy_schema(
         return
 
     parsed = parse_energy_specifications_response(
-        response.get("result"), category=device.category
+        response.get("result"),
+        category=device.category,
+        allowed_panel_codes=whitelist,
     )
     if parsed is None:
         LOGGER.warning(
@@ -514,7 +521,6 @@ async def ensure_device_energy_schema(
         return
 
     spec_doc, panel_functions = parsed
-    whitelist = attach_panel_entity_whitelist(device)
     spec_doc = filter_spec_doc_by_whitelist(spec_doc, whitelist)
     apply_specifications(device, spec_doc)
     set_device_panel_status_entities(device, spec_doc.get("status", []))
@@ -555,9 +561,200 @@ async def preload_panel_devices(hass: HomeAssistant, manager: Manager) -> None:
 
     for device in manager.device_map.values():
         await ensure_device_energy_schema(hass, manager, device)
+        await ensure_panel_energy_properties(hass, manager, device)
         normalize_panel_device_status(device)
         prune_obsolete_panel_config_entities(hass, device)
         restore_panel_entity_visibility(hass, device)
+
+
+_panel_energy_properties_locks: dict[str, asyncio.Lock] = {}
+
+
+def _resolve_dp_type(device: CustomerDevice, code: str) -> str | None:
+    """Return the DP type for a code from status_range or function schema."""
+    if status_range := device.status_range.get(code):
+        return status_range.type
+    if function := device.function.get(code):
+        return function.type
+    return None
+
+
+def _coerce_energy_property_value(
+    device: CustomerDevice, code: str, value: Any
+) -> Any:
+    """Coerce API string value to the DP type declared on the device."""
+    if not isinstance(value, str):
+        return value
+
+    dp_type = _resolve_dp_type(device, code)
+    if dp_type is None:
+        return value
+
+    if dp_type == "Boolean":
+        lowered = value.lower()
+        if lowered in ("true", "1"):
+            return True
+        if lowered in ("false", "0"):
+            return False
+        return value
+
+    if dp_type in ("Integer", "hourmin"):
+        try:
+            return int(value)
+        except ValueError:
+            return value
+
+    return value
+
+
+def get_panel_property_codes(device: CustomerDevice) -> list[str]:
+    """Return DP codes to query from energy/properties for the panel."""
+    from .panel_entity_discovery import (
+        get_panel_grouped_codes,
+        get_panel_status_codes,
+        panel_entity_whitelist,
+    )
+
+    codes = set(get_panel_grouped_codes(device))
+    codes.update(get_panel_status_codes(device))
+    whitelist = panel_entity_whitelist(device)
+    if whitelist:
+        codes &= set(whitelist)
+    return sorted(codes)
+
+
+def apply_energy_properties_to_device(
+    hass: HomeAssistant, device: CustomerDevice, properties: dict[str, Any]
+) -> list[str]:
+    """Merge energy property values into device.status and notify entities."""
+    from homeassistant.helpers.dispatcher import dispatcher_send
+
+    from .const import TUYA_HA_SIGNAL_UPDATE_ENTITY
+    from .panel_entity_discovery import normalize_panel_device_status
+
+    if not properties:
+        return []
+
+    updated_codes: list[str] = []
+    for code, value in properties.items():
+        coerced = _coerce_energy_property_value(device, code, value)
+        if device.status.get(code) != coerced:
+            device.status[code] = coerced
+            updated_codes.append(code)
+
+    if updated_codes:
+        normalize_panel_device_status(device, updated_codes)
+        dispatcher_send(
+            hass,
+            f"{TUYA_HA_SIGNAL_UPDATE_ENTITY}_{device.id}",
+            updated_codes,
+            None,
+        )
+    return updated_codes
+
+
+async def _fetch_energy_properties(
+    hass: HomeAssistant,
+    manager: Manager,
+    device: CustomerDevice,
+    *,
+    codes: list[str] | None = None,
+) -> dict[str, Any] | None:
+    """Fetch current energy property values from cloud API."""
+    device_id = device.id
+    api_path = PROPERTIES_API_PATH.format(device_id=device_id)
+    params: dict[str, str] | None = None
+    if codes:
+        params = {"codes": ",".join(codes)}
+
+    LOGGER.debug(
+        "Fetching energy properties from %s params=%s",
+        api_path,
+        params,
+    )
+    try:
+        response = await hass.async_add_executor_job(
+            manager.customer_api.get, api_path, params
+        )
+    except ApiRequestException as err:
+        LOGGER.warning(
+            "Energy properties API failed for device %s: %s", device_id, err
+        )
+        return None
+    if not response.get("success"):
+        LOGGER.warning(
+            "Failed to fetch energy properties for device %s", device_id
+        )
+        return None
+
+    properties = parse_energy_properties_response(response.get("result"))
+    LOGGER.debug(
+        "Fetched %d energy properties for device %s",
+        len(properties),
+        device_id,
+    )
+    return properties
+
+
+async def ensure_panel_energy_properties(
+    hass: HomeAssistant,
+    manager: Manager,
+    device: CustomerDevice,
+) -> list[str]:
+    """Fetch energy property values once per session for a panel device.
+
+    Called from ``preload_panel_devices`` during integration setup and from
+    ``get_panel_functions`` when opening the optional custom configuration panel.
+    """
+    if device.category not in DYNAMIC_PANEL_CATEGORIES:
+        return []
+    if getattr(device, "panel_energy_properties_loaded", False):
+        return []
+
+    lock = _panel_energy_properties_locks.setdefault(device.id, asyncio.Lock())
+    async with lock:
+        if getattr(device, "panel_energy_properties_loaded", False):
+            return []
+
+        codes = get_panel_property_codes(device)
+        properties = await _fetch_energy_properties(
+            hass, manager, device, codes=codes or None
+        )
+        if properties is None:
+            return []
+
+        device.panel_energy_properties_loaded = True
+        updated_codes = apply_energy_properties_to_device(
+            hass, device, properties
+        )
+        LOGGER.info(
+            "Loaded energy properties for device %s: %d codes updated",
+            device.id,
+            len(updated_codes),
+        )
+        return updated_codes
+
+
+def _serialize_energy_command_value(value: Any) -> str:
+    """Serialize a command value for energy/commands API (wire format is string)."""
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if value is None:
+        return ""
+    return str(value)
+
+
+def _serialize_energy_commands(
+    commands: list[dict[str, Any]],
+) -> list[dict[str, str]]:
+    """Normalize commands payload for energy/commands API."""
+    return [
+        {
+            "code": str(command["code"]),
+            "value": _serialize_energy_command_value(command["value"]),
+        }
+        for command in commands
+    ]
 
 
 async def apply_panel_commands_via_api(
@@ -566,20 +763,26 @@ async def apply_panel_commands_via_api(
     device: CustomerDevice,
     commands: list[dict[str, Any]],
 ) -> None:
-    """Apply panel dynamic entity commands via the thing commands API."""
+    """Apply panel dynamic entity commands via the energy commands API."""
     api_path = COMMANDS_API_PATH.format(device_id=device.id)
-    body = {"commands": commands}
+    payload = _serialize_energy_commands(commands)
+    body = {"commands": json.dumps(payload, separators=(",", ":"))}
     LOGGER.info(
         "Applying panel commands on device %s via %s: %s",
         device.id,
         api_path,
-        commands,
+        payload,
     )
 
     response = await hass.async_add_executor_job(
         manager.customer_api.post, api_path, None, body
     )
     if not response.get("success"):
+        LOGGER.warning(
+            "Energy commands API failed for device %s: %s",
+            device.id,
+            response,
+        )
         raise HomeAssistantError(
             f"Failed to apply panel commands on device {device.id}"
         )

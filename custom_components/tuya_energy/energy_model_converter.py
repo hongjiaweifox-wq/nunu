@@ -115,6 +115,170 @@ def build_enum_range(data_spec: dict[str, Any]) -> list[str]:
     return []
 
 
+def build_enum_code_to_wire_map(data_spec: dict[str, Any]) -> dict[str, str]:
+    """Map energy/commands protocol codes to HA enum range tokens."""
+    mapping: dict[str, str] = {}
+    range_info = data_spec.get("range_info")
+    if not isinstance(range_info, list):
+        return mapping
+
+    for item in range_info:
+        if not isinstance(item, dict):
+            continue
+        protocol_code = str(item.get("code", ""))
+        if not protocol_code:
+            continue
+        name = str(item.get("name", ""))
+        if _is_wire_enum_token(name):
+            mapping[protocol_code] = name
+        else:
+            mapping[protocol_code] = protocol_code
+    return mapping
+
+
+def build_panel_enum_code_maps(
+    model_entries: list[dict[str, Any]],
+) -> dict[str, dict[str, str]]:
+    """Build per-DP protocol-code maps for all enum entries in a model."""
+    maps: dict[str, dict[str, str]] = {}
+    for entry in model_entries:
+        if not isinstance(entry, dict):
+            continue
+        data_spec = entry.get("data_spec")
+        if not isinstance(data_spec, dict):
+            continue
+        if map_data_spec_type(data_spec) != "Enum":
+            continue
+        code = entry.get("code")
+        if not code:
+            continue
+        code_map = build_enum_code_to_wire_map(data_spec)
+        if code_map:
+            maps[str(code)] = code_map
+    return maps
+
+
+def _parse_enum_range_from_values(values: Any) -> list[str]:
+    """Parse enum range tokens from a Tuya values JSON string or dict."""
+    parsed: dict[str, Any] | None
+    if isinstance(values, str):
+        try:
+            parsed = json.loads(values)
+        except (json.JSONDecodeError, TypeError):
+            return []
+    elif isinstance(values, dict):
+        parsed = values
+    else:
+        return []
+
+    enum_range = parsed.get("range") if parsed else None
+    if isinstance(enum_range, list):
+        return [str(item) for item in enum_range]
+    return []
+
+
+def build_enum_wire_to_code_map(
+    data_spec: dict[str, Any],
+    *,
+    mqtt_enum_range: list[str] | None = None,
+    target_enum_range: list[str] | None = None,
+) -> dict[str, str]:
+    """Map MQTT/status wire enum tokens to HA select range tokens."""
+    target_range = target_enum_range or build_enum_range(data_spec)
+    if not target_range:
+        return {}
+
+    wire_map: dict[str, str] = {}
+    range_info = data_spec.get("range_info")
+    if isinstance(range_info, list):
+        for item in range_info:
+            if not isinstance(item, dict):
+                continue
+            protocol_code = str(item.get("code", ""))
+            if not protocol_code or protocol_code not in target_range:
+                continue
+            name = str(item.get("name", ""))
+            if _is_wire_enum_token(name):
+                wire_map[name] = protocol_code
+
+        if mqtt_enum_range:
+            for wire, item in zip(mqtt_enum_range, range_info):
+                if not isinstance(item, dict):
+                    continue
+                protocol_code = str(item.get("code", ""))
+                if protocol_code in target_range:
+                    wire_map[str(wire)] = protocol_code
+
+    if mqtt_enum_range:
+        for wire in mqtt_enum_range:
+            token = str(wire)
+            if token in target_range:
+                wire_map[token] = token
+
+    return wire_map
+
+
+# MQTT wire tokens that differ from energy-model protocol codes (xnyjcn).
+KNOWN_ENUM_WIRE_ALIASES: dict[str, dict[str, str]] = {
+    "work_mode": {
+        "self_powered": "1",
+        "time_of_use": "2",
+        "manual": "3",
+        "diy": "5",
+        "self": "1",
+        "tou": "2",
+    },
+}
+
+# Backward-compatible alias for internal builder usage.
+_KNOWN_ENUM_WIRE_ALIASES = KNOWN_ENUM_WIRE_ALIASES
+
+
+def build_panel_enum_wire_to_code_maps(
+    model_entries: list[dict[str, Any]],
+    spec_doc: dict[str, Any],
+) -> dict[str, dict[str, str]]:
+    """Build per-DP wire-to-range maps for MQTT/status enum normalization."""
+    mqtt_ranges: dict[str, list[str]] = {}
+    for bucket in ("status", "functions"):
+        for item in spec_doc.get(bucket, []):
+            if not isinstance(item, dict) or item.get("type") != "Enum":
+                continue
+            code = str(item.get("code", ""))
+            if not code:
+                continue
+            enum_range = _parse_enum_range_from_values(item.get("values", "{}"))
+            if enum_range and any(_is_wire_enum_token(token) for token in enum_range):
+                mqtt_ranges[code] = enum_range
+
+    maps: dict[str, dict[str, str]] = {}
+    for entry in model_entries:
+        if not isinstance(entry, dict):
+            continue
+        data_spec = entry.get("data_spec")
+        if not isinstance(data_spec, dict):
+            continue
+        if map_data_spec_type(data_spec) != "Enum":
+            continue
+        code = str(entry.get("code", ""))
+        if not code:
+            continue
+
+        target_range = build_enum_range(data_spec)
+        wire_map = build_enum_wire_to_code_map(
+            data_spec,
+            mqtt_enum_range=mqtt_ranges.get(code),
+            target_enum_range=target_range,
+        )
+        for wire, protocol in _KNOWN_ENUM_WIRE_ALIASES.get(code, {}).items():
+            if protocol in target_range:
+                wire_map.setdefault(wire, protocol)
+
+        if wire_map:
+            maps[code] = wire_map
+    return maps
+
+
 def build_values_payload(dp_type: str, data_spec: dict[str, Any]) -> dict[str, Any]:
     """Build the values object before JSON string serialization."""
     if dp_type in {"Boolean", "hourmin"}:

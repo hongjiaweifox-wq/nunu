@@ -16,6 +16,9 @@ from homeassistant.exceptions import HomeAssistantError
 
 from .const import LOGGER
 from .energy_model_converter import (
+    build_panel_enum_code_maps,
+    build_panel_enum_wire_to_code_maps,
+    extract_energy_model_entries,
     parse_energy_properties_response,
     parse_energy_specifications_response,
 )
@@ -195,12 +198,18 @@ def _apply_function_groups(
                 merged = DeviceFunction(**function)
 
             device.function[code] = merged
-            if code not in device.status_range:
+            status_payload = {
+                "code": code,
+                "type": merged.type,
+                "values": merged.values or "{}",
+            }
+            existing_status = device.status_range.get(code)
+            if existing_status is not None:
                 device.status_range[code] = DeviceStatusRange(
-                    code=code,
-                    type=merged.type,
-                    values=merged.values or "{}",
+                    **{**existing_status.__dict__, **status_payload}
                 )
+            else:
+                device.status_range[code] = DeviceStatusRange(**status_payload)
             group_list.append(merged)
         if group_list:
             function_groups[group_id] = group_list
@@ -397,6 +406,15 @@ async def ensure_device_energy_schema(
         return
 
     spec_doc, panel_functions = parsed
+    model_entries = extract_energy_model_entries(response.get("result"))
+    device.panel_enum_code_maps = (
+        build_panel_enum_code_maps(model_entries) if model_entries else {}
+    )
+    device.panel_enum_wire_to_code_maps = (
+        build_panel_enum_wire_to_code_maps(model_entries, spec_doc)
+        if model_entries
+        else {}
+    )
     apply_specifications(device, spec_doc)
     set_device_panel_status_entities(device, spec_doc.get("status", []))
 
@@ -456,11 +474,16 @@ def _coerce_energy_property_value(
     device: CustomerDevice, code: str, value: Any
 ) -> Any:
     """Coerce API string value to the DP type declared on the device."""
-    if not isinstance(value, str):
-        return value
-
     dp_type = _resolve_dp_type(device, code)
     if dp_type is None:
+        return value
+
+    if dp_type == "Enum":
+        from .panel_entity_discovery import normalize_enum_status_value
+
+        return normalize_enum_status_value(device, code, value)
+
+    if not isinstance(value, str):
         return value
 
     if dp_type == "Boolean":
@@ -666,8 +689,13 @@ def notify_panel_commands_applied(
     from .const import TUYA_HA_SIGNAL_UPDATE_ENTITY
 
     updated_codes = [command["code"] for command in commands]
+    from .panel_entity_discovery import normalize_enum_status_value
+
     for command in commands:
-        device.status[command["code"]] = command["value"]
+        code = command["code"]
+        device.status[code] = normalize_enum_status_value(
+            device, code, command["value"]
+        )
     from .panel_entity_discovery import normalize_panel_device_status
 
     normalize_panel_device_status(device, updated_codes)

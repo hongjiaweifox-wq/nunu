@@ -21,6 +21,7 @@ from homeassistant.helpers.entity import EntityCategory
 from homeassistant.helpers.entity_registry import RegistryEntryHider
 
 from .const import DOMAIN, LOGGER
+from .energy_model_converter import KNOWN_ENUM_WIRE_ALIASES
 from .panel_functions import DYNAMIC_PANEL_CATEGORIES, format_function_label
 
 PANEL_TYPE_TO_PLATFORM: dict[str, str] = {
@@ -97,6 +98,82 @@ def _resolve_panel_dp_type(device: CustomerDevice, code: str) -> str | None:
     return None
 
 
+def _enum_range_for_code(device: CustomerDevice, code: str) -> list[str]:
+    """Return enum option tokens declared on the device status schema."""
+    status_range = device.status_range.get(code)
+    if status_range is None or status_range.type != "Enum":
+        return []
+    try:
+        parsed = json.loads(status_range.values)
+    except (json.JSONDecodeError, TypeError):
+        return []
+    enum_range = parsed.get("range")
+    if not isinstance(enum_range, list):
+        return []
+    return [str(item) for item in enum_range]
+
+
+def _ha_enum_range_for_code(device: CustomerDevice, code: str) -> list[str]:
+    """Return enum options used by HA select entities (energy model preferred)."""
+    function = device.function.get(code)
+    if function is not None and function.type == "Enum" and function.values:
+        try:
+            parsed = json.loads(function.values)
+        except (json.JSONDecodeError, TypeError):
+            parsed = None
+        if isinstance(parsed, dict):
+            enum_range = parsed.get("range")
+            if isinstance(enum_range, list) and enum_range:
+                return [str(item) for item in enum_range]
+    return _enum_range_for_code(device, code)
+
+
+def _map_wire_enum_to_protocol(
+    device: CustomerDevice, code: str, wire_value: str, ha_range: list[str]
+) -> str | None:
+    """Map MQTT wire enum token to HA/protocol enum code."""
+    wire_to_code_maps = getattr(device, "panel_enum_wire_to_code_maps", None)
+    if isinstance(wire_to_code_maps, dict):
+        protocol_value = wire_to_code_maps.get(code, {}).get(wire_value)
+        if protocol_value is not None and (not ha_range or protocol_value in ha_range):
+            return protocol_value
+
+    protocol_value = KNOWN_ENUM_WIRE_ALIASES.get(code, {}).get(wire_value)
+    if protocol_value is not None and (not ha_range or protocol_value in ha_range):
+        return protocol_value
+
+    code_maps = getattr(device, "panel_enum_code_maps", None)
+    if isinstance(code_maps, dict):
+        mapped_wire = code_maps.get(code, {}).get(wire_value)
+        if mapped_wire is not None and (not ha_range or mapped_wire in ha_range):
+            return mapped_wire
+
+    return None
+
+
+def normalize_enum_status_value(
+    device: CustomerDevice, code: str, value: Any
+) -> Any:
+    """Normalize enum status to match HA select options after commands/properties."""
+    if value is None:
+        return value
+
+    str_value = str(value)
+    ha_range = _ha_enum_range_for_code(device, code)
+    status_range = _enum_range_for_code(device, code)
+
+    if ha_range and str_value in ha_range:
+        return str_value
+
+    if mapped := _map_wire_enum_to_protocol(device, code, str_value, ha_range):
+        return mapped
+
+    if status_range and str_value in status_range:
+        return str_value
+
+    return value
+
+
 def normalize_panel_device_status(
     device: CustomerDevice,
     codes: list[str] | None = None,
@@ -113,6 +190,12 @@ def normalize_panel_device_status(
         dp_type = _resolve_panel_dp_type(device, code)
         if dp_type == "Boolean":
             device.status[code] = _normalize_boolean_status_value(device.status[code])
+            continue
+
+        if dp_type == "Enum":
+            device.status[code] = normalize_enum_status_value(
+                device, code, device.status[code]
+            )
             continue
 
         status_range = device.status_range.get(code)
@@ -177,6 +260,7 @@ def build_panel_status_sensor_description(
     return SensorEntityDescription(
         key=function.code,
         name=format_function_label(function),
+        translation_key=function.code,
     )
 
 
@@ -251,6 +335,7 @@ def build_switch_description(
     return SwitchEntityDescription(
         key=function.code,
         name=format_function_label(function),
+        translation_key=function.code,
         entity_category=entity_category,
     )
 

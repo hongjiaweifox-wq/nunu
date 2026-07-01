@@ -7,7 +7,6 @@ import re
 from typing import Any
 
 PANEL_DP_TYPES = frozenset({"Boolean", "Integer", "Enum", "String", "hourmin"})
-PANEL_EXCLUDED_GROUPS = frozenset({0})
 
 DATA_SPEC_TYPE_MAP: dict[str, str] = {
     "value": "Integer",
@@ -220,11 +219,7 @@ def _dedupe_panel_functions_by_code(
 def convert_panel_functions(
     model_entries: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
-    """Convert setting entries to flat panel function list.
-
-    Group ``0`` (Default) is excluded to avoid flooding the panel with
-    hundreds of settings.
-    """
+    """Convert setting entries to flat panel function list (control entities)."""
     functions: list[dict[str, Any]] = []
 
     for entry in model_entries:
@@ -232,10 +227,6 @@ def convert_panel_functions(
             continue
         converted = convert_model_entry(entry)
         if converted is None or converted["type"] not in PANEL_DP_TYPES:
-            continue
-
-        group_id = entry.get("group", 0)
-        if group_id in PANEL_EXCLUDED_GROUPS:
             continue
 
         item: dict[str, Any] = dict(converted)

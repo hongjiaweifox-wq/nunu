@@ -5,5 +5,5 @@
   "homeassistant": "2026.6.0",
   "iot_class": "Cloud Push",
   "content_in_root": false,
-  "filename": "custom_components/tuya_energy"
+  "filename": "custom_components/conow"
 }

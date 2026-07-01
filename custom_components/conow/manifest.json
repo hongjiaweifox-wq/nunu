@@ -1,5 +1,5 @@
 {
-  "domain": "tuya_energy",
+  "domain": "conow",
   "name": "Conow Official",
   "version": "1.0.0",
   "codeowners": ["@Tuya", "@zlinoliver"],

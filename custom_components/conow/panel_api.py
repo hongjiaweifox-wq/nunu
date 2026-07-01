@@ -188,6 +188,9 @@ async def websocket_set_panel_functions(
 @websocket_api.websocket_command(
     {vol.Required("type"): f"{LEGACY_WS_DOMAIN}/get_panel_devices"}
 )
+@websocket_api.websocket_command(
+    {vol.Required("type"): "tuya_energy/get_panel_devices"}
+)
 @websocket_api.async_response
 async def websocket_get_panel_devices_legacy(
     hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict
@@ -199,6 +202,12 @@ async def websocket_get_panel_devices_legacy(
 @websocket_api.websocket_command(
     {
         vol.Required("type"): f"{LEGACY_WS_DOMAIN}/get_panel_functions",
+        vol.Required("device_id"): str,
+    }
+)
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "tuya_energy/get_panel_functions",
         vol.Required("device_id"): str,
     }
 )
@@ -217,6 +226,13 @@ async def websocket_get_panel_functions_legacy(
         vol.Required("code"): str,
     }
 )
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "tuya_energy/get_panel_function_history",
+        vol.Required("device_id"): str,
+        vol.Required("code"): str,
+    }
+)
 @websocket_api.async_response
 async def websocket_get_panel_function_history_legacy(
     hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict
@@ -228,6 +244,14 @@ async def websocket_get_panel_function_history_legacy(
 @websocket_api.websocket_command(
     {
         vol.Required("type"): f"{LEGACY_WS_DOMAIN}/set_panel_functions",
+        vol.Required("device_id"): str,
+        vol.Required("group_id"): str,
+        vol.Required("commands"): [COMMAND_SCHEMA],
+    }
+)
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "tuya_energy/set_panel_functions",
         vol.Required("device_id"): str,
         vol.Required("group_id"): str,
         vol.Required("commands"): [COMMAND_SCHEMA],

@@ -61,7 +61,7 @@ async function loadPanelDeviceIds(hass) {
   }
   if (!panelDeviceIdsPromise) {
     panelDeviceIdsPromise = hass
-      .callWS({ type: "tuya_energy/get_panel_devices" })
+      .callWS({ type: "conow/get_panel_devices" })
       .then((result) => {
         panelDeviceIds = new Set(
           (result.devices || []).map((device) => device.device_id)

@@ -26,7 +26,7 @@ from homeassistant.const import (
     UnitOfVolumetricFlux,
 )
 
-DOMAIN = "tuya_energy"
+DOMAIN = "conow"
 LOGGER = logging.getLogger(__package__)
 
 CONF_ENDPOINT = "endpoint"

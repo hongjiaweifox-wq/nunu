@@ -4,7 +4,7 @@ get_feeder_meal_plan:
       required: true
       selector:
         device:
-          integration: tuya
+          integration: conow
 
 set_feeder_meal_plan:
   fields:
@@ -12,7 +12,7 @@ set_feeder_meal_plan:
       required: true
       selector:
         device:
-          integration: tuya
+          integration: conow
     meal_plan:
       required: true
       selector:

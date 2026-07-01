@@ -77,11 +77,35 @@ def _normalize_integer_status_value(
     return value
 
 
+def _normalize_boolean_status_value(value: Any) -> Any:
+    """Convert /sta string booleans to Python bool for device handlers."""
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        lowered = value.lower()
+        if lowered in ("true", "1"):
+            return True
+        if lowered in ("false", "0"):
+            return False
+    if value in (0, 1):
+        return bool(value)
+    return value
+
+
+def _resolve_panel_dp_type(device: CustomerDevice, code: str) -> str | None:
+    """Return DP type from status_range or function schema."""
+    if status_range := device.status_range.get(code):
+        return status_range.type
+    if function := device.function.get(code):
+        return function.type
+    return None
+
+
 def normalize_panel_device_status(
     device: CustomerDevice,
     codes: list[str] | None = None,
 ) -> None:
-    """Normalize panel INTEGER status values for tuya_device_handlers."""
+    """Normalize panel status values for tuya_device_handlers."""
     if not is_panel_device(device):
         return
 
@@ -89,6 +113,12 @@ def normalize_panel_device_status(
     for code in targets:
         if code not in device.status:
             continue
+
+        dp_type = _resolve_panel_dp_type(device, code)
+        if dp_type == "Boolean":
+            device.status[code] = _normalize_boolean_status_value(device.status[code])
+            continue
+
         status_range = device.status_range.get(code)
         if status_range is None or status_range.type != "Integer":
             continue

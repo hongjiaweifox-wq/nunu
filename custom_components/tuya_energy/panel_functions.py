@@ -799,6 +799,9 @@ def notify_panel_commands_applied(
     updated_codes = [command["code"] for command in commands]
     for command in commands:
         device.status[command["code"]] = command["value"]
+    from .panel_entity_discovery import normalize_panel_device_status
+
+    normalize_panel_device_status(device, updated_codes)
     dispatcher_send(
         hass,
         f"{TUYA_HA_SIGNAL_UPDATE_ENTITY}_{device.id}",

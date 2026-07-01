@@ -24,8 +24,6 @@ from .hourmin import hourmin_to_time
 DYNAMIC_PANEL_CATEGORIES = frozenset({"xnyjcn"})
 PANEL_FUNCTIONS_MOCK_DIR = "mock"
 PANEL_FUNCTIONS_MOCK_FILE = "tuya_panel_functions.json"
-PANEL_ENTITY_WHITELIST_DIR = "filter"
-PANEL_ENTITY_WHITELIST_FILE = "code.json"
 USE_MOCK_PANEL_FUNCTIONS = False
 SPECIFICATIONS_API_PATH = "/v1.0/m/life/ha/{device_id}/energy/specifications"
 PROPERTIES_API_PATH = "/v1.0/m/life/ha/{device_id}/energy/properties"
@@ -255,116 +253,6 @@ def _get_mock_panel_functions_path() -> Path:
     return Path(__file__).parent / PANEL_FUNCTIONS_MOCK_DIR / PANEL_FUNCTIONS_MOCK_FILE
 
 
-def _get_panel_entity_whitelist_path() -> Path:
-    """Return bundled panel entity whitelist path."""
-    return Path(__file__).parent / PANEL_ENTITY_WHITELIST_DIR / PANEL_ENTITY_WHITELIST_FILE
-
-
-_PANEL_ENTITY_WHITELIST: frozenset[str] | None = None
-
-
-def load_panel_entity_whitelist() -> frozenset[str]:
-    """Load allowed panel entity codes from filter/code.json."""
-    whitelist_path = _get_panel_entity_whitelist_path()
-    if not whitelist_path.is_file():
-        LOGGER.warning(
-            "Panel entity whitelist file missing: %s", whitelist_path
-        )
-        return frozenset()
-
-    try:
-        data = json.loads(whitelist_path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError) as err:
-        LOGGER.warning(
-            "Failed to read panel entity whitelist from %s: %s",
-            whitelist_path,
-            err,
-        )
-        return frozenset()
-
-    if not isinstance(data, list):
-        LOGGER.warning(
-            "Invalid panel entity whitelist format in %s: expected JSON array",
-            whitelist_path,
-        )
-        return frozenset()
-
-    return frozenset(str(code) for code in data if code)
-
-
-def get_panel_entity_whitelist_codes() -> frozenset[str]:
-    """Return cached panel entity whitelist codes."""
-    global _PANEL_ENTITY_WHITELIST
-    if _PANEL_ENTITY_WHITELIST is None:
-        _PANEL_ENTITY_WHITELIST = load_panel_entity_whitelist()
-        LOGGER.debug(
-            "Panel entity whitelist loaded: %s",
-            sorted(_PANEL_ENTITY_WHITELIST),
-        )
-    return _PANEL_ENTITY_WHITELIST
-
-
-def attach_panel_entity_whitelist(device: CustomerDevice) -> frozenset[str]:
-    """Attach panel entity whitelist to a device."""
-    whitelist = get_panel_entity_whitelist_codes()
-    device.panel_entity_whitelist = whitelist
-    return whitelist
-
-
-def filter_grouped_functions_by_whitelist(
-    grouped_functions: dict[str, list[dict[str, Any]]] | None,
-    whitelist: frozenset[str],
-) -> dict[str, list[dict[str, Any]]] | None:
-    """Keep only function groups whose codes are in the whitelist."""
-    if not grouped_functions or not whitelist:
-        return None
-
-    filtered: dict[str, list[dict[str, Any]]] = {}
-    for group_id, functions in grouped_functions.items():
-        items = [
-            function
-            for function in functions
-            if isinstance(function, dict)
-            and str(function.get("code", "")) in whitelist
-        ]
-        if items:
-            filtered[str(group_id)] = items
-    return filtered or None
-
-
-def filter_status_entities_by_whitelist(
-    status_entities: list[dict[str, Any]],
-    whitelist: frozenset[str],
-) -> list[dict[str, Any]]:
-    """Keep only status schema entries whose codes are in the whitelist."""
-    if not whitelist:
-        return []
-    return [
-        entry
-        for entry in status_entities
-        if isinstance(entry, dict) and str(entry.get("code", "")) in whitelist
-    ]
-
-
-def filter_spec_doc_by_whitelist(
-    spec_doc: dict[str, Any], whitelist: frozenset[str]
-) -> dict[str, Any]:
-    """Filter writable/read-only specification entries by whitelist."""
-    filtered = dict(spec_doc)
-    functions = filtered.get("functions")
-    if isinstance(functions, list):
-        filtered["functions"] = [
-            function
-            for function in functions
-            if isinstance(function, dict)
-            and str(function.get("code", "")) in whitelist
-        ]
-    filtered["status"] = filter_status_entities_by_whitelist(
-        filtered.get("status") or [], whitelist
-    )
-    return filtered
-
-
 def _read_mock_panel_file(
     mock_path: Path, category: str
 ) -> dict[str, Any] | None:
@@ -425,25 +313,16 @@ async def _apply_mock_energy_schema(
             "Panel mock unavailable for device %s, skipping energy schema",
             device.id,
         )
-        attach_panel_entity_whitelist(device)
         device.function_groups = {}
         return
 
-    whitelist = attach_panel_entity_whitelist(device)
-    grouped_functions = filter_grouped_functions_by_whitelist(
-        mock_schema.get("functions"), whitelist
-    )
-    status_entities = filter_status_entities_by_whitelist(
-        mock_schema.get("status") or [], whitelist
-    )
-    spec_doc = filter_spec_doc_by_whitelist(
-        {
-            "category": device.category,
-            "functions": _flatten_grouped_functions(grouped_functions),
-            "status": status_entities,
-        },
-        whitelist,
-    )
+    grouped_functions = mock_schema.get("functions")
+    status_entities = mock_schema.get("status") or []
+    spec_doc = {
+        "category": device.category,
+        "functions": _flatten_grouped_functions(grouped_functions),
+        "status": status_entities,
+    }
     apply_specifications(device, spec_doc)
     set_device_panel_status_entities(device, status_entities)
 
@@ -497,8 +376,6 @@ async def ensure_device_energy_schema(
     if device.category not in DYNAMIC_PANEL_CATEGORIES:
         return
 
-    whitelist = attach_panel_entity_whitelist(device)
-
     if USE_MOCK_PANEL_FUNCTIONS:
         await _apply_mock_energy_schema(hass, device)
         return
@@ -511,7 +388,6 @@ async def ensure_device_energy_schema(
     parsed = parse_energy_specifications_response(
         response.get("result"),
         category=device.category,
-        allowed_panel_codes=whitelist,
     )
     if parsed is None:
         LOGGER.warning(
@@ -521,13 +397,10 @@ async def ensure_device_energy_schema(
         return
 
     spec_doc, panel_functions = parsed
-    spec_doc = filter_spec_doc_by_whitelist(spec_doc, whitelist)
     apply_specifications(device, spec_doc)
     set_device_panel_status_entities(device, spec_doc.get("status", []))
 
-    grouped_functions = filter_grouped_functions_by_whitelist(
-        normalize_function_groups_payload(panel_functions), whitelist
-    )
+    grouped_functions = normalize_function_groups_payload(panel_functions)
     panel_source = SPECIFICATIONS_API_PATH.format(device_id=device.id)
 
     if grouped_functions:
@@ -612,14 +485,10 @@ def get_panel_property_codes(device: CustomerDevice) -> list[str]:
     from .panel_entity_discovery import (
         get_panel_grouped_codes,
         get_panel_status_codes,
-        panel_entity_whitelist,
     )
 
     codes = set(get_panel_grouped_codes(device))
     codes.update(get_panel_status_codes(device))
-    whitelist = panel_entity_whitelist(device)
-    if whitelist:
-        codes &= set(whitelist)
     return sorted(codes)
 
 

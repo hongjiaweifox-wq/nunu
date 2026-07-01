@@ -1,6 +1,6 @@
 {
   "domain": "tuya_energy",
-  "name": "Conow",
+  "name": "Conow Official",
   "version": "1.0.0",
   "codeowners": ["@Tuya", "@zlinoliver"],
   "config_flow": true,

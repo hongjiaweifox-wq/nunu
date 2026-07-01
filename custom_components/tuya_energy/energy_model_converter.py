@@ -219,14 +219,11 @@ def _dedupe_panel_functions_by_code(
 
 def convert_panel_functions(
     model_entries: list[dict[str, Any]],
-    *,
-    allowed_codes: frozenset[str] | None = None,
 ) -> list[dict[str, Any]]:
     """Convert setting entries to flat panel function list.
 
-    Group ``0`` (Default) is normally excluded to avoid flooding the panel with
-    hundreds of settings. Codes in ``allowed_codes`` are still included so
-    whitelisted entities such as ``work_mode`` can be discovered.
+    Group ``0`` (Default) is excluded to avoid flooding the panel with
+    hundreds of settings.
     """
     functions: list[dict[str, Any]] = []
 
@@ -237,11 +234,9 @@ def convert_panel_functions(
         if converted is None or converted["type"] not in PANEL_DP_TYPES:
             continue
 
-        code = str(converted["code"])
         group_id = entry.get("group", 0)
         if group_id in PANEL_EXCLUDED_GROUPS:
-            if allowed_codes is None or code not in allowed_codes:
-                continue
+            continue
 
         item: dict[str, Any] = dict(converted)
         if name := entry.get("name"):
@@ -256,16 +251,13 @@ def parse_energy_specifications_response(
     result: Any,
     *,
     category: str,
-    allowed_panel_codes: frozenset[str] | None = None,
 ) -> tuple[dict[str, Any], list[dict[str, Any]]] | None:
     """Parse energy specifications API result into instruction set + panel list."""
     model_entries = extract_energy_model_entries(result)
     if model_entries is not None:
         return (
             convert_energy_model(model_entries, category=category),
-            convert_panel_functions(
-                model_entries, allowed_codes=allowed_panel_codes
-            ),
+            convert_panel_functions(model_entries),
         )
 
     if not isinstance(result, dict):

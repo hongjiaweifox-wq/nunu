@@ -21,11 +21,7 @@ from homeassistant.helpers.entity import EntityCategory
 from homeassistant.helpers.entity_registry import RegistryEntryHider
 
 from .const import DOMAIN, LOGGER
-from .panel_functions import (
-    DYNAMIC_PANEL_CATEGORIES,
-    format_function_label,
-    get_panel_entity_whitelist_codes,
-)
+from .panel_functions import DYNAMIC_PANEL_CATEGORIES, format_function_label
 
 PANEL_TYPE_TO_PLATFORM: dict[str, str] = {
     "Boolean": "switch",
@@ -141,20 +137,6 @@ def is_panel_device(device: CustomerDevice) -> bool:
     return device.category in DYNAMIC_PANEL_CATEGORIES
 
 
-def panel_entity_whitelist(device: CustomerDevice) -> frozenset[str]:
-    """Return allowed panel entity codes for a device."""
-    whitelist = getattr(device, "panel_entity_whitelist", None)
-    if whitelist is None:
-        whitelist = get_panel_entity_whitelist_codes()
-        device.panel_entity_whitelist = whitelist
-    return whitelist
-
-
-def is_panel_whitelisted_code(device: CustomerDevice, code: str) -> bool:
-    """Return whether a DP code is allowed by the panel entity whitelist."""
-    return code in panel_entity_whitelist(device)
-
-
 def panel_unique_id(tuya_device_id: str, code: str) -> str:
     """Return the unique id used by Tuya config entities."""
     return f"tuya.{tuya_device_id}{code}"
@@ -179,8 +161,6 @@ def iter_panel_status_sensors(
         if not isinstance(entry, dict) or "code" not in entry:
             continue
         code = str(entry["code"])
-        if not is_panel_whitelisted_code(device, code):
-            continue
         if code in grouped_codes or code in seen:
             continue
         if str(entry.get("type", "")) not in PANEL_STATUS_SENSOR_TYPES:
@@ -231,8 +211,6 @@ def iter_panel_functions(
     for functions in getattr(device, "function_groups", {}).values():
         for function in functions:
             code = function.code
-            if not is_panel_whitelisted_code(device, code):
-                continue
             if code in seen:
                 continue
             platform = PANEL_TYPE_TO_PLATFORM.get(function.type)
@@ -315,8 +293,6 @@ def get_panel_status_codes(device: CustomerDevice) -> set[str]:
         if not isinstance(entry, dict) or "code" not in entry:
             continue
         code = str(entry["code"])
-        if not is_panel_whitelisted_code(device, code):
-            continue
         if code in grouped_codes:
             continue
         if str(entry.get("type", "")) not in PANEL_STATUS_SENSOR_TYPES:
@@ -379,7 +355,7 @@ def prune_obsolete_panel_config_entities(
         entity_registry.async_remove(entity_id)
         entity_registry.deleted_entities.pop(delete_key, None)
         LOGGER.info(
-            "Removing obsolete panel %s entity %s (not in panel whitelist)",
+            "Removing obsolete panel %s entity %s (not in panel schema)",
             kind,
             entity_id,
         )

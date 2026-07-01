@@ -249,6 +249,7 @@ def build_number_description(
     return NumberEntityDescription(
         key=function.code,
         name=format_function_label(function),
+        translation_key=function.code,
         entity_category=entity_category,
     )
 

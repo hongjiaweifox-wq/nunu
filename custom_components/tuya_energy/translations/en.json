@@ -186,6 +186,15 @@
             }
         },
         "number": {
+            "diy_target_soc": {
+                "name": "Target Battery Level"
+            },
+            "diy_max_power": {
+                "name": "Maximum AC Power"
+            },
+            "diy_timeout": {
+                "name": "Duration"
+            },
             "alarm_delay": {
                 "name": "Alarm delay"
             },
@@ -324,6 +333,13 @@
                     "2": "tou",
                     "3": "manual",
                     "5": "diy"
+                }
+            },
+            "diy_mode": {
+                "name": "Charge mode",
+                "state": {
+                    "0": "charge",
+                    "1": "discharge"
                 }
             },
             "basic_anti_flicker": {

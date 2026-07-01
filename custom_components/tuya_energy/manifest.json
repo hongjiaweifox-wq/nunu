@@ -1,6 +1,6 @@
 {
   "domain": "tuya_energy",
-  "name": "Tuya Energy",
+  "name": "Conow",
   "version": "1.0.0",
   "codeowners": ["@Tuya", "@zlinoliver"],
   "config_flow": true,
@@ -46,6 +46,6 @@
   "loggers": ["tuya_sharing"],
   "requirements": [
     "tuya-device-handlers==0.0.22",
-    "tuya-device-sharing-sdk==0.2.8"
+    "tuya-device-sharing-sdk==0.2.12"
   ]
 }

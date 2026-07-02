@@ -1,217 +1,177 @@
-# agent-skills — Conow Open Energy Skills
+# Conow Official for Home Assistant
 
-`agent-skills` is a curated set of AI Agent skills built on top of the **Conow / Tuya end-user energy APIs** (the `sk-` Bearer token gateway used by Conow App). The skills let an AI Agent answer real questions about a user's home energy system — how much PV was generated, what the battery is doing right now, which device is dispatched, what the current tariff window looks like — and, where the gateway allows it, take action on a single device.
-
-The package is structured to mirror [`tuya/tuya-openclaw-skills`](https://github.com/tuya/tuya-openclaw-skills): one folder per skill, each carrying its own `SKILL.md`, `references/`, and `scripts/`, so any one of them can be installed independently into OpenClaw / TuyaClaw or any agent runtime that consumes Anthropic-style skills.
+**Conow Official** is the official Home Assistant custom integration (domain: `conow`) for Conow / Tuya home energy users. It connects your Conow account to Home Assistant with cloud push updates, exposes standard Tuya device entities, and adds first-class support for balcony-solar / all-in-one energy devices (`xnyjcn`) via the Conow Energy Model APIs.
 
 > **⚠️ Trial notice**
 >
-> All open API endpoints are currently in a **trial phase**. Each endpoint is subject to limits on call count, call frequency, and quota. The specific limits will be published progressively — please watch this repository for follow-up announcements. If you run into rate-limiting or quota-exhaustion during use, wait a moment and retry.
+> Energy API endpoints used by this integration (`energy/specifications`, `energy/properties`, `energy/commands`) are currently in a **trial phase**. Each endpoint may be subject to limits on call count, frequency, and quota. Specific limits will be published progressively — please watch this repository for follow-up announcements. If you hit rate limits or quota exhaustion, wait a moment and retry.
 
 ---
 
-## Skill Catalog
+## Feature Catalog
 
-| Skill | Emoji | Scope | Mode |
-|-------|-------|-------|------|
-| [`conow-energy`](./conow-energy/SKILL.md) | ⚡ | Home-level energy: real-time PV / battery / grid / load flow, indicator aggregate / trend / top, hour-level forecast, tariff query/label, optimization impact, list / resolve homes | Read-only |
-| [`conow-device`](./conow-device/SKILL.md) | 🔌 | Per-device queries and control. Auto-routes between Tuya generic device endpoints (`detail` / `model` / `shadow issue`) and Conow energy-device endpoints (`topo` / `protocol` / `model` / `properties` / `alarms` / `indicators` / `issue`) | Read + targeted Write |
-| [`conow-dispatch`](./conow-dispatch/SKILL.md) | 🤖 | Home-level AI energy dispatch (HEMS savings mode): list dispatch status across homes, inspect schedule / `savePercent` / `deviceDispatchList`, disable on a specific home | Read + `disable` Write |
-
-The three skills share the same authentication, the same data-center mapping, and the same routing convention so an agent can pick one of them based on the user's intent without tripping over auth differences.
-
-Each skill also ships deep-dive references worth reading before non-trivial use: [`conow-energy/references/api_reference.md`](./conow-energy/references/api_reference.md), [`conow-device/references/device_routing.md`](./conow-device/references/device_routing.md) + [`device_control_confirm.md`](./conow-device/references/device_control_confirm.md), and [`conow-dispatch/references/dispatch_reference.md`](./conow-dispatch/references/dispatch_reference.md).
+| Capability | Description | Mode |
+|------------|-------------|------|
+| General Tuya devices | Lights, switches, sensors, climate, cameras, and more via `tuya-device-handlers` | Read + Write |
+| Energy all-in-one (`xnyjcn`) | Lyra, CBE, and similar balcony-solar devices with dynamic DP entities | Read + Write |
+| Energy Model discovery | Auto-create `select` / `number` / `switch` / `time` / `sensor` from `energy/specifications` | Read + Write |
+| Energy Properties sync | Pull current values from `energy/properties` on startup and refresh | Read |
+| Energy Commands | Grouped parameter writes through `energy/commands` | Write |
+| Custom panel | WebSocket-backed configuration panel for advanced energy device setup | Read + Write |
+| Scenes | Trigger cloud scenes bound to your Conow account | Write |
 
 ---
 
-## Routing Cheatsheet (which skill answers which question)
+## Routing Cheatsheet
 
-| User intent | Default skill | Notes |
-|-------------|---------------|-------|
-| "How much did my home use today / this month?" | `conow-energy` | `indicators-aggregate` with the consumption SOL quartet. |
-| "How much PV did I generate yesterday?" | `conow-energy` | `indicators-aggregate` with the produce SOL quartet. |
-| "Am I importing or exporting right now?" / "What's flowing in my home?" | `conow-energy` | `conow-flow`; if real-time flow is unavailable, explain that and use aggregate data only as secondary context. |
-| "What's the current tariff?" / "When is electricity cheapest tomorrow?" | `conow-energy` | `tariff-query` + `tariff-label` (+ optional `forecast`). |
-| "Is the EV charger working?" / "How much is the heat pump using?" (specific device) | `conow-device` | `device-overview` after `detect` auto-routes the device. |
-| "Does this device have any alarms?" | `conow-device` | `energy-alarms`. |
-| "Turn on the living-room light" (generic device) | `conow-device` | `device-control` (generic `properties`) / `public-control`. |
-| "Set the inverter to ..." (energy device — **inverters only**; all-in-one control is not offered) | `conow-device` | Two-step gate: `control-plan` → `control-confirm`. `energy-issue` is a low-level primitive, not the user path. |
-| "Which homes are running AI dispatch right now?" | `conow-dispatch` | `list` scans all visible homes; status is three-state — **enabled** (actively dispatching), **idle** (dispatch on but `allDeviceUnable` / 0 dispatched — NOT actively saving), **disabled**. Never report an idle home as actively saving. |
-| "Walk me through today's AI dispatch plan" / "Is savings mode working?" | `conow-dispatch` | `query` returns `scheduleList`, `reasonList`, `savePercent`. |
-| "Disable AI dispatch on home X" | `conow-dispatch` | `disable` (only Write op in this skill). |
-| "Enable AI dispatch on home X" | — | Intentionally not surfaced by this skill (not an API gap); direct the user to the Conow App to enable it. |
+| User intent | Where to look |
+|-------------|---------------|
+| "How much PV is my home generating right now?" | `sensor.*_total_photovoltaic_power`, `sensor.*_pv_power_*` on `xnyjcn` devices |
+| "What is the battery doing?" | `sensor.*_battery_power`, `sensor.*_current_soc`, `select.*_charge_discharge` |
+| "Switch inverter work mode / DIY settings" | `select.*_inverter_work_mode`, `number.*_diy_*` |
+| "Run automation when mode changes from manual (3) to DIY (5)" | State trigger on `select.*_inverter_work_mode` from `3` to `5` |
+| "Change a group of parameters at once" | Device detail energy panel, or Developer Tools → Services |
+| "Control a regular Tuya device" | Standard `switch`, `light`, `climate`, etc. entities |
 
-The same routing applies regardless of language. Reply in the user's language; never translate `home_id`, `devId`, `energyDevId`, indicator codes, or gateway error codes.
-
-**Don't ask the user for a raw `home_id` up front.** Talk in home names — `resolve-home` / `list-homes` map a name (or substring) to its id, and a single-home account auto-resolves. Only fall back to asking for an id when a name is ambiguous or unmatched (the CLI returns `candidates[]`).
+Reply in the user's language in automations and dashboards; entity IDs and DP codes stay as-is.
 
 ---
 
 ## Getting Started
 
-### 1. Obtain a Conow / Tuya `sk-` API Key
+### 1. Install
 
-These skills use the same end-user `sk-` Bearer token format as the rest of the Tuya Open Platform. Get your key from the **Conow web console** at <https://conowweb.saaszh.com/>. **The gateway base URL is auto-detected from the region prefix** — the first two characters after `sk-` map to a regional data-center URL, so you normally do not set a URL at all.
+**HACS (recommended)**
 
-| Prefix | Region | REST API Base URL |
-|--------|--------|-------------------|
-| `sk-AY` | China | `https://openapi.tuyacn.com` |
-| `sk-AZ` | US West | `https://openapi.tuyaus.com` |
-| `sk-EU` | Central Europe | `https://openapi.tuyaeu.com` |
-| `sk-IN` | India | `https://openapi.tuyain.com` |
-| `sk-UE` | US East | `https://openapi-ueaz.tuyaus.com` |
-| `sk-WE` | Western Europe | `https://openapi-weaz.tuyaeu.com` |
-| `sk-SG` | Singapore | `https://openapi-sg.iotbing.com` |
+1. Add this repository as a custom HACS integration source.
+2. Install **Conow Official**.
+3. Restart Home Assistant.
 
-Set `CONOW_BASE_URL` only if your deployment provides a dedicated gateway URL; when set, it **overrides** the auto-detected region URL.
+**Manual**
 
-### 2. Configure environment
+Copy `custom_components/conow` into your Home Assistant `config/custom_components/` directory and restart.
 
-```bash
-export CONOW_API_KEY="sk-..."           # Required — base URL is auto-detected from the prefix
-# Optional overrides
-export CONOW_BASE_URL="https://openapi.tuyaeu.com"   # Overrides the auto-detected region URL
-export CONOW_HOME_ID="<home_id>"        # Default home_id for conow-energy / conow-dispatch (the conow-device CLI does NOT read this)
-export CONOW_DEVICE_ID="<dev_id>"       # Default devId for conow-device commands
-export CONOW_VERBOSE=1                  # Print a redacted request summary to stderr (debugging)
-```
+### 2. Configure
 
-The skills refuse to load if `CONOW_API_KEY` is missing. The CLIs **never** echo the raw key.
+1. Go to **Settings → Devices & Services → Add Integration**.
+2. Search for **Conow Official**.
+3. Enter your **User Code** (Conow / Smart Life account user code).
+4. Scan the QR code with the **Conow App** to authorize.
+5. Wait for devices to sync.
 
-### 3. Verify your setup
+To re-authenticate: open the integration entry → **Reconfigure**.
 
-Run the no-argument discovery command first — it confirms your key works and your base URL is reachable:
+### 3. Prerequisites
 
-```bash
-python3 conow-energy/scripts/conow_cli.py list-homes
-```
+- Home Assistant **2026.6.0** or later
+- A Conow account with devices already bound in the app
+- Outbound HTTPS access to Tuya cloud endpoints
 
-If it returns a list of homes, you are set. Copy a `home_id` from the output and, optionally, export it as the default so you can drop `--home-id` from later commands:
+Runtime Python dependencies are declared in `manifest.json`:
 
-```bash
-export CONOW_HOME_ID="<home_id from list-homes>"
-```
-
-### 4. Prerequisites
-
-- Python 3.7+
-
-No third-party Python dependency is required. Each skill ships a self-contained CLI under `scripts/`.
-
-### 5. Install into OpenClaw / TuyaClaw
-
-Each subfolder is a standalone OpenClaw skill — drop `conow-energy/`, `conow-device/`, and/or `conow-dispatch/` into your skill registry, set `CONOW_API_KEY` in the skill configuration, and the metadata block in each `SKILL.md` will pick the right emoji, declare the required env var, and route prompts.
+- `tuya-device-handlers`
+- `tuya-device-sharing-sdk`
 
 ---
 
-## Quick Examples
+## Energy Devices (`xnyjcn`)
 
-> Run these from the **repository root** — the examples use relative `python3 conow-energy/scripts/...` paths that will not resolve from another directory.
+### Dynamic entities
 
-```bash
-# === Start here: no-argument discovery ===
-python3 conow-energy/scripts/conow_cli.py list-homes        # returns your homes (no args)
-python3 conow-dispatch/scripts/conow_dispatch_cli.py list   # AI dispatch status across all homes
+For supported energy devices the integration:
 
-# === conow-energy ===
-python3 conow-energy/scripts/conow_cli.py resolve-home --home-name "My Home"
-# An ambiguous or unknown name is a normal result: prints {"success":false,...,"candidates":[...]} and exits 0.
-python3 conow-energy/scripts/conow_cli.py conow-flow --home-id <home_id>
-python3 conow-energy/scripts/conow_cli.py indicators-aggregate \
-  --home-id <home_id> \
-  --date-type day --begin-date 20260421 --end-date 20260421 \
-  --indicator-code ele_consumption_sol,ele_consumption_from_pv_sol,ele_consumption_from_battery_sol,ele_consumption_from_grid_sol \
-  --time-aggr-type sum
-python3 conow-energy/scripts/conow_cli.py forecast --home-id <home_id> \
-  --begin-date <yyyyMMddHH, current hour or later> --end-date <same window, up to +48h>
+1. Loads the device schema from `energy/specifications`.
+2. Syncs live values from `energy/properties`.
+3. Creates Home Assistant entities by DP type (Enum → `select`, Integer → `number`, etc.).
 
-# === conow-device ===
-python3 conow-device/scripts/conow_device_cli.py detect --dev-id <DEV_ID>
-python3 conow-device/scripts/conow_device_cli.py device-overview --dev-id <DEV_ID>
+Entity names follow Energy Model `code` values (e.g. `work_mode`, `diy_max_power`) and support localization via `strings.json` / `translations/`.
 
-# Generic device control (lights, sockets, ...):
-python3 conow-device/scripts/conow_device_cli.py device-control \
-  --dev-id <SOCKET_DEV_ID> --properties '{"switch_led": true}'
+### Enum normalization
 
-# Energy-device control is a two-step gate (control-plan validates, control-confirm writes):
-python3 conow-device/scripts/conow_device_cli.py control-plan \
-  --dev-id <INVERTER_DEV_ID> --properties '{"inverter_work_mode_setting":"1"}'   # ready=true -> prints a plan_hash, exit 0
-python3 conow-device/scripts/conow_device_cli.py control-confirm \
-  --dev-id <INVERTER_DEV_ID> --properties '{"inverter_work_mode_setting":"1"}' --plan-hash <PLAN_HASH>
+Cloud MQTT may report the same enum DP twice:
 
-# === conow-dispatch ===
-python3 conow-dispatch/scripts/conow_dispatch_cli.py query --home-id <home_id>
-python3 conow-dispatch/scripts/conow_dispatch_cli.py disable --home-id <home_id>
+- Semantic aliases: `manual`, `diy`, `self_powered`, …
+- Protocol codes: `"3"`, `"5"`, …
+
+The integration **normalizes wire aliases to protocol codes** before updating entity state, so `select` entities do not briefly become `unknown` and state-based automations (e.g. `from: '3'` → `to: '5'`) remain reliable.
+
+### Automation example
+
+```yaml
+alias: Charge on DIY mode
+triggers:
+  - trigger: state
+    entity_id: select.my_lyra_inverter_work_mode
+    from: "3"
+    to: "5"
+actions:
+  - action: select.select_option
+    target:
+      entity_id: select.my_lyra_charge_mode
+    data:
+      option: "0"
 ```
 
-Use `--help` on any CLI for the full command list.
-
----
-
-## Exit Codes
-
-- **`0` = success; non-zero = failure.** Branch on "non-zero means failure" — do not hard-code specific values.
-- Failure codes are not yet unified across the CLIs: `conow-energy` returns **`2`** on a business / gateway error; `conow-device` and `conow-dispatch` return **`1`**. A missing `CONOW_API_KEY` exits **`2`** in all three.
-- `resolve-home`'s "ambiguous / not found" is a normal result, not a failure. `conow-energy`'s `resolve-home` exits **`0`** with the options in `candidates[]`; `conow-device`'s `resolve-home` exits **`1`** in that case (its `candidates[]` still come back in the printed payload — read it rather than branching on the exit code alone).
-- `control-plan` exits **`1`** and emits no `plan_hash` when `ready=false`; do not proceed to `control-confirm`.
-
----
-
-## Output Contract
-
-- Data goes to **stdout** (JSON by default); friendly hints and error messages go to **stderr**.
-- Even when the gateway returns `success:false`, the CLI **prints the full payload first** (including `code` / `msg`) to stdout, then exits non-zero.
-- Judge success by both the exit code **and** `payload.success`; when surfacing an error, pass the raw `code` / `msg` through to the user.
+Prefer **state triggers** with the full `entity_id`. Device triggers must reference the correct entity registry entry.
 
 ---
 
 ## Common Pitfalls
 
-- **No `week` granularity.** `--date-type` is `quarter / hour / day / month / year`. For a weekly total, use `day` across the 7-day range with `--time-aggr-type sum`.
-- **`forecast` is narrow.** Hour granularity only (`yyyyMMddHH`), window ≤ 48h, anchored at the current hour or later, at most 2 codes (`ele_forecast_produce` / `ele_forecast_consumption`). Outside these bounds the raw gateway silently returns an empty `list[]` with `success:true`; the bundled CLI rejects > 48h windows, > 2 codes, and out-of-whitelist codes locally with a non-zero exit before the call (override via `--allow-long-window` / `--allow-any-code`). A **past anchor is not caught locally** — it still reaches the gateway and silently returns an empty list, so anchor `begin_date` at the current hour or later yourself.
-- **`conow-impact --phone-code` is an ISO 3166 alpha-2 country code** (e.g. `CN` / `DE`) and is **not validated.** Passing a phone dial code (`86`) or an alpha-3 code (`CHN`) silently yields wrong carbon figures with no error. Do not copy `conow-station`'s `country_code` straight in — it is not guaranteed to be alpha-2.
-
-See [`conow-energy/references/api_reference.md`](./conow-energy/references/api_reference.md) for the full field-level contract.
+- **Do not run both `tuya` and `conow` on the same device.** Pick one integration per device to avoid duplicate entities and conflicting state.
+- **`select` flashing `unknown` on mode change** usually means enum normalization failed — update to the latest integration version and reload the entry.
+- **Automation not firing on 3 → 5** — open Developer Tools → States and confirm the entity transitions directly from `3` to `5` without an intermediate `unknown`.
+- **Missing entities after firmware or model change** — reload the integration to re-fetch `energy/specifications`.
 
 ---
 
 ## Project Structure
 
 ```
-agent-skills/
-├── README.md                          # English overview (this file)
-├── LICENSE                            # MIT
-├── conow-energy/                      # Home-level energy skill (read-only)
-│   ├── SKILL.md
-│   ├── references/
-│   │   ├── api_reference.md
-│   │   └── skill_manifest.md
-│   └── scripts/
-│       └── conow_cli.py
-├── conow-device/                      # Per-device skill (auto-routed read + write)
-│   ├── SKILL.md
-│   ├── references/
-│   │   ├── device_routing.md
-│   │   └── device_control_confirm.md
-│   └── scripts/
-│       └── conow_device_cli.py
-└── conow-dispatch/                    # Home AI dispatch skill (read + disable)
-    ├── SKILL.md
-    ├── references/
-    │   └── dispatch_reference.md
-    └── scripts/
-        └── conow_dispatch_cli.py
+home-assistant/
+├── LICENSE                          # MIT
+├── README.md                        # This file (HACS readme)
+├── hacs.json
+└── custom_components/
+    └── conow/                       # Conow Official integration
+        ├── manifest.json            # domain: conow
+        ├── config_flow.py           # QR login flow
+        ├── coordinator.py           # Device listener & state dispatch
+        ├── panel_functions.py       # Energy Model / Properties / Commands
+        ├── panel_entity_discovery.py
+        ├── energy_model_converter.py
+        ├── strings.json / translations/
+        └── panel/frontend/          # xnyjcn configuration panel
 ```
 
 ---
 
 ## Security & Data Egress
 
-All three skills send the `sk-` Bearer token, the `home_id` / `devId` you reference, and the request parameters you pass to the configured base URL. The `conow-device` skill additionally sends control payloads (generic `properties` via `device-control` / `public-control`, or energy `setting` via the `control-plan` → `control-confirm` gate) when you invoke a write command; `conow-dispatch` sends a `disable` body to turn off AI dispatch on a specified home.
+- Login tokens are stored in the Home Assistant **config entry** (encrypted at rest by HA); they are not written to logs.
+- Device status and commands travel through **Tuya cloud MQTT / REST** over TLS.
+- Group writes via `energy/commands` are validated before submission; only devices under the logged-in account are reachable.
+- The integration does **not** log API keys, session tokens, or other credentials.
 
-- **No raw keys in output.** Every CLI avoids printing the raw `CONOW_API_KEY`.
-- **No runtime cache committed.** `scripts/.home_cache.json`, when generated, lives only on the local machine and is excluded by `.gitignore`.
-- **Confirm before write.** Always confirm the target `home_id` / `devId` with the user before issuing a write. For generic devices that is `device-control` / `public-control`; for energy devices use the two-step gate `control-plan` (read-only preview, produces a `plan_hash`) → `control-confirm` (writes only when the `plan_hash` and settings match). `dispatch disable` is the only write in `conow-dispatch`.
+Always confirm the target device and action with the user before issuing write commands from automations or scripts.
+
+---
+
+## Q&A
+
+### Energy dashboard shows **Entity not defined** after switching from the Tuya integration to Conow
+
+**Symptom:** On **Settings → Dashboards → Energy**, the Electricity grid section shows a warning such as:
+
+> Entity not defined — Check the integration or your configuration that provides:
+> - `sensor.ke_ting_lyra_2500_pro_2_lifetime_battery_charge_energy`
+> - `sensor.ke_ting_lyra_2500_pro_2_lifetime_battery_discharge_energy`
+
+**Cause:** Energy configuration stores full `entity_id` values. When you migrate from the official **Tuya** integration (or the legacy `tuya_energy` integration) to **Conow**, entity IDs are recreated with different naming — for example, Conow uses Energy Model `code` slugs such as `stack_accumulated_charging_power` instead of Tuya translation keys such as `lifetime_battery_charge_energy`. The old IDs no longer exist, so Energy still points at orphaned entries.
+
+**Fix:** Open the Energy configuration, remove or replace the broken entities, and **manually select the new Conow sensor entities** for the same device. Exact names depend on your device and area assignment; search in the entity picker by device name (e.g. **Lyra 2500 Pro 2**) and choose the kWh sensors with `device_class: energy`.
+
+**Note:** If a newly added entity shows **Statistics not defined** briefly, wait up to 5 minutes after the sensor first reports a numeric value — Home Assistant generates statistics metadata on the next recorder compile cycle.
 
 ---
 
